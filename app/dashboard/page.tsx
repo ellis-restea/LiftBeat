@@ -117,14 +117,18 @@ export default function Dashboard() {
             </p>
           </div>
           <div className="flex items-center gap-3">
-            <button
+            <div
+              role="button"
+              tabIndex={0}
               onClick={() => router.push(hasPlaylists ? "/playlist-select?mode=edit" : "/playlist-select")}
-              className="relative w-12 h-12 rounded-xl overflow-hidden border border-gray-600 hover:border-gray-400 transition shrink-0"
+              onKeyDown={(e) => e.key === "Enter" && router.push(hasPlaylists ? "/playlist-select?mode=edit" : "/playlist-select")}
               title="Edit playlists"
+              className="relative w-12 h-12 rounded-xl overflow-hidden border border-gray-600 hover:border-gray-400 transition shrink-0 cursor-pointer"
             >
               {playlistCoverUrl ? (
                 <img
                   src={playlistCoverUrl}
+                  alt="Playlist cover"
                   className="absolute inset-0 w-full h-full object-cover"
                   style={{ filter: "blur(1.5px) brightness(0.5)" }}
                 />
@@ -135,10 +139,10 @@ export default function Dashboard() {
                   </svg>
                 </div>
               )}
-              <span className="absolute inset-0 flex items-center justify-center text-sm z-10">
+              <div className="absolute inset-0 flex items-center justify-center text-sm z-10">
                 ✏️
-              </span>
-            </button>
+              </div>
+            </div>
             <button
               onClick={() => signOut()}
               className="text-gray-600 hover:text-white text-sm transition"
