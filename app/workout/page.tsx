@@ -52,6 +52,7 @@ export default function Workout() {
   const [dragProgress, setDragProgress] = useState(0);
   const [setsCompleted, setSetsCompleted] = useState(0);
   const [noDevice, setNoDevice] = useState(false);
+  const [waitingForDevice, setWaitingForDevice] = useState(false);
 
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   // Timestamp of the last playback command — poll is suppressed for 1.5s after
@@ -220,10 +221,64 @@ export default function Workout() {
     return () => clearInterval(timerRef.current!);
   }, [workoutState, currentExercise]);
 
-  const handleStart = () => {
-    setWorkoutState("warmup");
-    playTrack(true);
+  const handleStart = async () => {
+    if (!session?.accessToken) return;
+    const body = playlistIds.length > 0
+      ? { context_uri: `spotify:playlist:${playlistIds[0]}` }
+      : {};
+    lastCommandRef.current = Date.now();
+    const res = await fetch("https://api.spotify.com/v1/me/player/play", {
+      method: "PUT",
+      headers: {
+        Authorization: `Bearer ${session.accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body),
+    });
+    if (res.ok || res.status === 204) {
+      setIsPlaying(true);
+      setNoDevice(false);
+      setWorkoutState("warmup");
+    } else {
+      // 404 = no active device, 403 = premium/device issue
+      setNoDevice(true);
+      setWaitingForDevice(true);
+    }
   };
+
+  // Poll every 3s when waiting for a Spotify device to become active
+  useEffect(() => {
+    if (!waitingForDevice || !session?.accessToken) return;
+    const poll = setInterval(async () => {
+      const res = await fetch("https://api.spotify.com/v1/me/player", {
+        headers: { Authorization: `Bearer ${session.accessToken}` },
+      });
+      if (res.status !== 200) return;
+      const data = await res.json();
+      if (!data?.device) return;
+      // Active device found — start playback and kick off the workout
+      clearInterval(poll);
+      setWaitingForDevice(false);
+      setNoDevice(false);
+      const body = playlistIds.length > 0
+        ? { context_uri: `spotify:playlist:${playlistIds[0]}` }
+        : {};
+      lastCommandRef.current = Date.now();
+      const playRes = await fetch("https://api.spotify.com/v1/me/player/play", {
+        method: "PUT",
+        headers: {
+          Authorization: `Bearer ${session.accessToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(body),
+      });
+      if (playRes.ok || playRes.status === 204) {
+        setIsPlaying(true);
+        setWorkoutState("warmup");
+      }
+    }, 3000);
+    return () => clearInterval(poll);
+  }, [waitingForDevice, session, playlistIds]);
 
   const handleStartSet = () => {
     setWorkoutState("exercising");
@@ -438,7 +493,9 @@ export default function Workout() {
     >
       {noDevice && (
         <div className="fixed top-0 left-0 right-0 z-50 bg-amber-900/90 backdrop-blur-sm text-amber-200 text-sm text-center py-2.5 px-4">
-          Open Spotify on your device to enable music
+          {waitingForDevice
+            ? "Open Spotify on your device — workout will start automatically"
+            : "Open Spotify on your device to enable music"}
         </div>
       )}
 
@@ -554,9 +611,10 @@ export default function Workout() {
         {workoutState === "idle" && (
           <button
             onClick={handleStart}
-            className="w-full bg-amber-500 hover:bg-amber-400 text-black font-bold py-5 rounded-2xl text-xl touch-manipulation"
+            disabled={waitingForDevice}
+            className="w-full bg-amber-500 hover:bg-amber-400 disabled:opacity-60 text-black font-bold py-5 rounded-2xl text-xl touch-manipulation"
           >
-            Start Workout 🔥
+            {waitingForDevice ? "Waiting for Spotify..." : "Start Workout 🔥"}
           </button>
         )}
         {workoutState === "warmup" && (
