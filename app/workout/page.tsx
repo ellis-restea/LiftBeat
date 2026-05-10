@@ -172,26 +172,34 @@ export default function Workout() {
     return () => clearInterval(interval);
   }, [fetchCurrentTrack]);
 
+  // Keep a ref so the timer closure always calls the latest playTrack
+  // without needing it as a dep (which would restart the timer on track load)
+  const playTrackRef = useRef(playTrack);
+  useEffect(() => { playTrackRef.current = playTrack; }, [playTrack]);
+
+  // Single effect: sets timeLeft AND starts the interval atomically.
+  // Two separate effects had a race: the "start" effect read timeLeft=0
+  // before the "init" effect's setState had committed, so the timer
+  // bailed immediately and never ticked.
   useEffect(() => {
     if (workoutState !== "resting" || !currentExercise) return;
-    setTimeLeft(currentExercise.rest_seconds);
-  }, [workoutState, currentExercise]);
 
-  useEffect(() => {
-    if (workoutState !== "resting" || timeLeft <= 0) return;
+    const duration = currentExercise.rest_seconds;
+    setTimeLeft(duration);
+
+    let remaining = duration;
     timerRef.current = setInterval(() => {
-      setTimeLeft((prev) => {
-        if (prev <= 1) {
-          clearInterval(timerRef.current!);
-          setWorkoutState("exercising");
-          playTrack(true);
-          return 0;
-        }
-        return prev - 1;
-      });
+      remaining -= 1;
+      setTimeLeft(remaining);
+      if (remaining <= 0) {
+        clearInterval(timerRef.current!);
+        setWorkoutState("exercising");
+        playTrackRef.current(true);
+      }
     }, 1000);
+
     return () => clearInterval(timerRef.current!);
-  }, [workoutState, playTrack]);
+  }, [workoutState, currentExercise]);
 
   const handleStart = () => {
     setWorkoutState("warmup");

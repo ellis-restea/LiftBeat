@@ -14,23 +14,43 @@ export default function PlaylistSelect() {
   const [selected, setSelected] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [fetchError, setFetchError] = useState<string | null>(null);
 
   useEffect(() => {
     if (status === "unauthenticated") router.push("/");
   }, [status]);
 
   useEffect(() => {
-    if (session?.accessToken) {
-      fetch("https://api.spotify.com/v1/me/playlists?limit=50", {
-        headers: { Authorization: `Bearer ${session.accessToken}` },
-      })
-        .then((res) => res.json())
-        .then((data) => {
-          setPlaylists(data.items || []);
-          setLoading(false);
-        });
+    if (status === "loading") return;
+
+    if (!session?.accessToken) {
+      console.error("No Spotify access token on session:", session);
+      setFetchError("Missing Spotify access token — try signing out and back in.");
+      setLoading(false);
+      return;
     }
-  }, [session]);
+
+    fetch("https://api.spotify.com/v1/me/playlists?limit=50", {
+      headers: { Authorization: `Bearer ${session.accessToken}` },
+    })
+      .then(async (res) => {
+        if (!res.ok) {
+          const body = await res.text();
+          throw new Error(`Spotify ${res.status}: ${body}`);
+        }
+        return res.json();
+      })
+      .then((data) => {
+        console.log("Playlists loaded:", data.items?.length ?? 0);
+        setPlaylists(data.items || []);
+        setLoading(false);
+      })
+      .catch((err) => {
+        console.error("Failed to load playlists:", err);
+        setFetchError("Couldn't load playlists. Check the console and try again.");
+        setLoading(false);
+      });
+  }, [session, status]);
 
   const togglePlaylist = (id: string) => {
     setSelected((prev) =>
@@ -53,6 +73,19 @@ export default function PlaylistSelect() {
     return (
       <div className="flex items-center justify-center min-h-screen bg-black text-white">
         Loading your playlists...
+      </div>
+    );
+
+  if (fetchError)
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen bg-black text-white gap-4 p-8 text-center">
+        <p className="text-red-400 text-lg">{fetchError}</p>
+        <button
+          onClick={() => router.push("/dashboard")}
+          className="text-gray-400 hover:text-white underline text-sm"
+        >
+          Back to dashboard
+        </button>
       </div>
     );
 
