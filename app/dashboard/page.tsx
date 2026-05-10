@@ -1,6 +1,6 @@
 "use client";
 import { useSession, signOut } from "next-auth/react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 
@@ -16,6 +16,10 @@ export default function Dashboard() {
   const [workouts, setWorkouts] = useState<Workout[]>([]);
   const [hasPlaylists, setHasPlaylists] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editName, setEditName] = useState("");
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const editInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (status === "unauthenticated") router.push("/");
@@ -43,6 +47,41 @@ export default function Dashboard() {
       setLoading(false);
     });
   }, [session]);
+
+  const startEdit = (workout: Workout, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setDeletingId(null);
+    setEditingId(workout.id);
+    setEditName(workout.name);
+  };
+
+  const saveEdit = async (workoutId: string) => {
+    const trimmed = editName.trim();
+    setEditingId(null);
+    if (!trimmed) return;
+    await supabase.from("workouts").update({ name: trimmed }).eq("id", workoutId);
+    setWorkouts((prev) =>
+      prev.map((w) => (w.id === workoutId ? { ...w, name: trimmed } : w))
+    );
+  };
+
+  const startDelete = (workoutId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setEditingId(null);
+    setDeletingId(workoutId);
+  };
+
+  const confirmDelete = async (workoutId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    await supabase.from("workouts").delete().eq("id", workoutId);
+    setWorkouts((prev) => prev.filter((w) => w.id !== workoutId));
+    setDeletingId(null);
+  };
+
+  const cancelDelete = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setDeletingId(null);
+  };
 
   if (status === "loading" || loading)
     return (
@@ -90,24 +129,95 @@ export default function Dashboard() {
               <p>No workouts yet. Create your first one!</p>
             </div>
           ) : (
-            workouts.map((workout) => (
-              <div
-                key={workout.id}
-                onClick={() => router.push(`/workout?workout_id=${workout.id}`)}
-                className="flex items-center justify-between bg-gray-900 hover:bg-gray-800 border border-transparent hover:border-gray-700 rounded-xl p-4 cursor-pointer transition"
-              >
-                <div>
-                  <p className="font-semibold">{workout.name}</p>
-                  <p className="text-gray-500 text-sm">
-                    {new Date(workout.created_at).toLocaleDateString("en-US", {
-                      month: "short",
-                      day: "numeric",
-                    })}
-                  </p>
+            workouts.map((workout) => {
+              const isEditing = editingId === workout.id;
+              const isDeleting = deletingId === workout.id;
+
+              if (isDeleting) {
+                return (
+                  <div
+                    key={workout.id}
+                    className="flex items-center justify-between bg-red-950 border border-red-500/40 rounded-xl p-4"
+                  >
+                    <p className="text-red-300 text-sm font-semibold truncate mr-4">
+                      Delete &ldquo;{workout.name}&rdquo;?
+                    </p>
+                    <div className="flex gap-2 shrink-0">
+                      <button
+                        onClick={cancelDelete}
+                        className="text-gray-400 hover:text-white text-sm px-3 py-1.5 rounded-lg border border-gray-700 transition"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        onClick={(e) => confirmDelete(workout.id, e)}
+                        className="bg-red-600 hover:bg-red-500 text-white text-sm px-3 py-1.5 rounded-lg font-semibold transition"
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </div>
+                );
+              }
+
+              return (
+                <div
+                  key={workout.id}
+                  onClick={() => {
+                    if (isEditing) return;
+                    router.push(`/workout?workout_id=${workout.id}`);
+                  }}
+                  className="flex items-center justify-between bg-gray-900 hover:bg-gray-800 border border-transparent hover:border-gray-700 rounded-xl p-4 cursor-pointer transition"
+                >
+                  <div className="min-w-0 flex-1">
+                    {isEditing ? (
+                      <input
+                        ref={editInputRef}
+                        autoFocus
+                        value={editName}
+                        onChange={(e) => setEditName(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") saveEdit(workout.id);
+                          if (e.key === "Escape") setEditingId(null);
+                        }}
+                        onBlur={() => saveEdit(workout.id)}
+                        onClick={(e) => e.stopPropagation()}
+                        className="bg-gray-800 text-white rounded-lg px-3 py-1 text-sm outline-none focus:ring-2 focus:ring-green-500 w-full max-w-xs"
+                      />
+                    ) : (
+                      <div className="flex items-center gap-2">
+                        <p className="font-semibold truncate">{workout.name}</p>
+                        <button
+                          onClick={(e) => startEdit(workout, e)}
+                          className="text-gray-600 hover:text-gray-300 transition shrink-0"
+                          title="Rename"
+                        >
+                          <svg viewBox="0 0 24 24" fill="currentColor" className="w-3.5 h-3.5">
+                            <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z" />
+                          </svg>
+                        </button>
+                        <button
+                          onClick={(e) => startDelete(workout.id, e)}
+                          className="text-gray-600 hover:text-red-400 transition shrink-0"
+                          title="Delete"
+                        >
+                          <svg viewBox="0 0 24 24" fill="currentColor" className="w-3.5 h-3.5">
+                            <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z" />
+                          </svg>
+                        </button>
+                      </div>
+                    )}
+                    <p className="text-gray-500 text-sm mt-0.5">
+                      {new Date(workout.created_at).toLocaleDateString("en-US", {
+                        month: "short",
+                        day: "numeric",
+                      })}
+                    </p>
+                  </div>
+                  <span className="text-gray-600 text-xl ml-4 shrink-0">→</span>
                 </div>
-                <span className="text-gray-600 text-xl">→</span>
-              </div>
-            ))
+              );
+            })
           )}
         </div>
 
