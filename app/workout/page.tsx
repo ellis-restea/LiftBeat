@@ -50,6 +50,7 @@ export default function Workout() {
   const [songDuration, setSongDuration] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
   const [dragProgress, setDragProgress] = useState(0);
+  const [setsCompleted, setSetsCompleted] = useState(0);
 
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   // Timestamp of the last playback command — poll is suppressed for 1.5s after
@@ -61,10 +62,7 @@ export default function Workout() {
 
   const currentExercise = exercises[currentExerciseIndex];
   const totalSets = exercises.reduce((acc, ex) => acc + ex.sets, 0);
-  const completedSets =
-    exercises.slice(0, currentExerciseIndex).reduce((acc, ex) => acc + ex.sets, 0) +
-    (currentSet - 1);
-  const workoutProgress = totalSets > 0 ? Math.round((completedSets / totalSets) * 100) : 0;
+  const workoutProgress = totalSets > 0 ? Math.round((setsCompleted / totalSets) * 100) : 0;
 
   const nextEx = exercises[currentExerciseIndex + 1];
   const isInSuperset =
@@ -226,6 +224,7 @@ export default function Workout() {
 
   const handleSetDone = () => {
     if (!currentExercise) return;
+    setSetsCompleted((c) => c + 1);
 
     const nextExercise = exercises[currentExerciseIndex + 1];
     const nextIsSuperset =
