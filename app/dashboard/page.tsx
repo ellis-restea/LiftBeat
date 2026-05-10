@@ -19,6 +19,8 @@ export default function Dashboard() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [playlistCoverUrl, setPlaylistCoverUrl] = useState<string | null>(null);
+  const [firstPlaylistId, setFirstPlaylistId] = useState<string | null>(null);
   const editInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -40,13 +42,26 @@ export default function Dashboard() {
         .single(),
     ]).then(([workoutsRes, playlistsRes]) => {
       setWorkouts(workoutsRes.data || []);
-      setHasPlaylists(
-        Array.isArray(playlistsRes.data?.playlist_ids) &&
-          playlistsRes.data.playlist_ids.length > 0
-      );
+      const ids = playlistsRes.data?.playlist_ids;
+      const hasPl = Array.isArray(ids) && ids.length > 0;
+      setHasPlaylists(hasPl);
+      if (hasPl) setFirstPlaylistId(ids[0]);
       setLoading(false);
     });
   }, [session]);
+
+  // Fetch the first playlist's cover art from Spotify for the widget
+  useEffect(() => {
+    if (!firstPlaylistId || !session?.accessToken) return;
+    fetch(`https://api.spotify.com/v1/playlists/${firstPlaylistId}?fields=images`, {
+      headers: { Authorization: `Bearer ${session.accessToken}` },
+    })
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.images?.[0]?.url) setPlaylistCoverUrl(data.images[0].url);
+      })
+      .catch(() => {});
+  }, [firstPlaylistId, session]);
 
   const startEdit = (workout: Workout, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -105,10 +120,21 @@ export default function Dashboard() {
             {hasPlaylists && (
               <button
                 onClick={() => router.push("/playlist-select?mode=edit")}
-                className="text-gray-500 hover:text-white text-lg transition"
+                className="relative w-10 h-10 rounded-xl overflow-hidden border border-gray-700 hover:border-gray-500 transition shrink-0"
                 title="Edit playlists"
               >
-                ✏️
+                {playlistCoverUrl ? (
+                  <img
+                    src={playlistCoverUrl}
+                    className="absolute inset-0 w-full h-full object-cover"
+                    style={{ filter: "blur(1.5px) brightness(0.55)" }}
+                  />
+                ) : (
+                  <div className="absolute inset-0 bg-gray-800" />
+                )}
+                <span className="absolute inset-0 flex items-center justify-center text-base z-10">
+                  ✏️
+                </span>
               </button>
             )}
             <button

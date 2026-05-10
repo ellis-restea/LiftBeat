@@ -51,6 +51,7 @@ export default function Workout() {
   const [isDragging, setIsDragging] = useState(false);
   const [dragProgress, setDragProgress] = useState(0);
   const [setsCompleted, setSetsCompleted] = useState(0);
+  const [noDevice, setNoDevice] = useState(false);
 
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   // Timestamp of the last playback command — poll is suppressed for 1.5s after
@@ -171,8 +172,14 @@ export default function Workout() {
     const res = await fetch("https://api.spotify.com/v1/me/player/currently-playing", {
       headers: { Authorization: `Bearer ${session.accessToken}` },
     });
+    if (res.status === 204) {
+      // No active Spotify device
+      setNoDevice(true);
+      return;
+    }
     if (res.status === 200) {
       const data = await res.json();
+      setNoDevice(false);
       setCurrentTrack(data?.item);
       setIsPlaying(data?.is_playing);
       setSongPosition(data?.progress_ms || 0);
@@ -429,8 +436,14 @@ export default function Workout() {
       className={`min-h-screen ${bgColors[workoutState]} text-white flex flex-col items-center justify-between p-8 transition-colors`}
       style={{ transitionDuration: workoutState === "exercising" ? "300ms" : "700ms" }}
     >
+      {noDevice && (
+        <div className="fixed top-0 left-0 right-0 z-50 bg-amber-900/90 backdrop-blur-sm text-amber-200 text-sm text-center py-2.5 px-4">
+          Open Spotify on your device to enable music
+        </div>
+      )}
+
       {/* Top */}
-      <div className="text-center mt-4 w-full">
+      <div className={`text-center w-full ${noDevice ? "mt-12" : "mt-4"}`}>
         <p className="text-gray-400 text-xs uppercase tracking-widest mb-2">
           Exercise {currentExerciseIndex + 1} of {exercises.length}
         </p>
