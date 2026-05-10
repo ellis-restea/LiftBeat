@@ -29,6 +29,33 @@ export default function WorkoutSetup() {
   const updateExercise = (index: number, field: keyof Exercise, value: any) => {
     const updated = [...exercises];
     updated[index] = { ...updated[index], [field]: value };
+
+    // Keep rest_seconds in sync across a superset pair
+    if (field === "rest_seconds") {
+      const aIdx = updated[index].superset_with; // non-null means this is B
+      if (aIdx != null) {
+        updated[aIdx] = { ...updated[aIdx], rest_seconds: value as number };
+      }
+      const bIdx = updated.findIndex((ex, i) => i !== index && ex.superset_with === index);
+      if (bIdx !== -1) {
+        updated[bIdx] = { ...updated[bIdx], rest_seconds: value as number };
+      }
+    }
+
+    setExercises(updated);
+  };
+
+  const toggleSuperset = (index: number) => {
+    const updated = [...exercises];
+    const current = updated[index];
+    const partnerIdx = index - 1;
+    const enabling = current.superset_with !== partnerIdx;
+    updated[index] = {
+      ...current,
+      superset_with: enabling ? partnerIdx : null,
+      // Snap rest time to partner's when linking
+      rest_seconds: enabling ? updated[partnerIdx].rest_seconds : current.rest_seconds,
+    };
     setExercises(updated);
   };
 
@@ -130,13 +157,17 @@ if (error || !workout) { setSaving(false); return; }
                 <div className="flex justify-between items-center">
                   <div>
                     <p className="text-gray-300">Superset</p>
-                    <p className="text-gray-500 text-sm">Pair with exercise {index}</p>
+                    <p className="text-gray-500 text-sm">
+                      {ex.superset_with != null
+                        ? `Paired with Exercise ${index} · rest synced`
+                        : `Pair with Exercise ${index}`}
+                    </p>
                   </div>
                   <button
-                    onClick={() => updateExercise(index, "superset_with", ex.superset_with === index - 1 ? null : index - 1)}
-                    className={`w-12 h-6 rounded-full transition ${ex.superset_with !== null ? "bg-green-500" : "bg-gray-700"}`}
+                    onClick={() => toggleSuperset(index)}
+                    className={`w-12 h-6 rounded-full transition ${ex.superset_with != null ? "bg-green-500" : "bg-gray-700"}`}
                   >
-                    <div className={`w-5 h-5 bg-white rounded-full transition-transform mx-0.5 ${ex.superset_with !== null ? "translate-x-6" : ""}`} />
+                    <div className={`w-5 h-5 bg-white rounded-full transition-transform mx-0.5 ${ex.superset_with != null ? "translate-x-6" : ""}`} />
                   </button>
                 </div>
               )}

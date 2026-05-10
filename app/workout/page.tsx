@@ -59,8 +59,8 @@ export default function Workout() {
 
   const nextEx = exercises[currentExerciseIndex + 1];
   const isInSuperset =
-    currentExercise?.superset_with !== null ||
-    nextEx?.superset_with === currentExercise?.order_index;
+    currentExercise?.superset_with != null ||
+    (nextEx?.superset_with != null && nextEx.superset_with === currentExercise?.order_index);
 
   useEffect(() => {
     if (!workoutId) return;
@@ -75,18 +75,18 @@ export default function Workout() {
       });
   }, [workoutId]);
 
-  // Load playlists from Supabase
-  useEffect(() => {
-    if (!session?.user?.name) return;
-    supabase
-      .from("user_playlists")
-      .select("playlist_ids")
-      .eq("user_id", session.user.name)
-      .single()
-      .then(({ data }) => {
-        if (data?.playlist_ids) setPlaylistIds(data.playlist_ids);
-      });
-  }, [session]);
+  // TEMP: playlist load skipped for offline testing — restore this block when done
+  // useEffect(() => {
+  //   if (!session?.user?.name) return;
+  //   supabase
+  //     .from("user_playlists")
+  //     .select("playlist_ids")
+  //     .eq("user_id", session.user.name)
+  //     .single()
+  //     .then(({ data }) => {
+  //       if (data?.playlist_ids) setPlaylistIds(data.playlist_ids);
+  //     });
+  // }, [session]);
 
   // Load and analyze playlist BPMs
   useEffect(() => {
@@ -214,8 +214,10 @@ export default function Workout() {
     if (!currentExercise) return;
 
     const nextExercise = exercises[currentExerciseIndex + 1];
-    const nextIsSuperset = nextExercise?.superset_with === currentExercise.order_index;
-    const currentIsSupersetB = currentExercise.superset_with !== null;
+    const nextIsSuperset =
+      nextExercise?.superset_with != null &&
+      nextExercise.superset_with === currentExercise.order_index;
+    const currentIsSupersetB = currentExercise.superset_with != null;
 
     if (nextIsSuperset) {
       // A → B: jump immediately, no rest, stay in exercising
@@ -228,24 +230,28 @@ export default function Workout() {
       const pairedAIdx = exercises.findIndex(
         (ex) => ex.order_index === currentExercise.superset_with
       );
-      const pairedA = exercises[pairedAIdx];
-      if (currentSet < pairedA.sets) {
-        setCurrentExerciseIndex(pairedAIdx);
-        setCurrentSet(currentSet + 1);
-        setWorkoutState("resting");
-        playTrack(false);
+      if (pairedAIdx === -1) {
+        // Superset partner missing — fall through to normal exercise logic
       } else {
-        // All sets of this superset pair done — move to exercise after B
-        if (currentExerciseIndex + 1 < exercises.length) {
-          setCurrentExerciseIndex(currentExerciseIndex + 1);
-          setCurrentSet(1);
+        const pairedA = exercises[pairedAIdx];
+        if (currentSet < pairedA.sets) {
+          setCurrentExerciseIndex(pairedAIdx);
+          setCurrentSet(currentSet + 1);
           setWorkoutState("resting");
           playTrack(false);
         } else {
-          setWorkoutState("done");
+          // All sets of this superset pair done — move to exercise after B
+          if (currentExerciseIndex + 1 < exercises.length) {
+            setCurrentExerciseIndex(currentExerciseIndex + 1);
+            setCurrentSet(1);
+            setWorkoutState("resting");
+            playTrack(false);
+          } else {
+            setWorkoutState("done");
+          }
         }
+        return;
       }
-      return;
     }
 
     // Normal exercise
