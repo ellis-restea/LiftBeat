@@ -291,20 +291,25 @@ export default function Workout() {
 
   const skipTrack = async () => {
     if (!session?.accessToken) return;
-    lastCommandRef.current = Date.now();
+    // Short cooldown — no optimistic state to protect, so poll quickly for new track
+    lastCommandRef.current = Date.now() - 1200;
     await fetch("https://api.spotify.com/v1/me/player/next", {
       method: "POST",
       headers: { Authorization: `Bearer ${session.accessToken}` },
     });
+    setTimeout(fetchCurrentTrack, 400);
+    setTimeout(fetchCurrentTrack, 800);
   };
 
   const prevTrack = async () => {
     if (!session?.accessToken) return;
-    lastCommandRef.current = Date.now();
+    lastCommandRef.current = Date.now() - 1200;
     await fetch("https://api.spotify.com/v1/me/player/previous", {
       method: "POST",
       headers: { Authorization: `Bearer ${session.accessToken}` },
     });
+    setTimeout(fetchCurrentTrack, 400);
+    setTimeout(fetchCurrentTrack, 800);
   };
 
   // --- Progress bar scrubbing ---
