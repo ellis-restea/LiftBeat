@@ -79,18 +79,17 @@ export default function Workout() {
       });
   }, [workoutId]);
 
-  // TEMP: playlist load skipped for offline testing — restore this block when done
-  // useEffect(() => {
-  //   if (!session?.user?.name) return;
-  //   supabase
-  //     .from("user_playlists")
-  //     .select("playlist_ids")
-  //     .eq("user_id", session.user.name)
-  //     .single()
-  //     .then(({ data }) => {
-  //       if (data?.playlist_ids) setPlaylistIds(data.playlist_ids);
-  //     });
-  // }, [session]);
+  useEffect(() => {
+    if (!session?.user?.name) return;
+    supabase
+      .from("user_playlists")
+      .select("playlist_ids")
+      .eq("user_id", session.user.name)
+      .single()
+      .then(({ data }) => {
+        if (data?.playlist_ids) setPlaylistIds(data.playlist_ids);
+      });
+  }, [session]);
 
   // Load and analyze playlist BPMs
   useEffect(() => {
