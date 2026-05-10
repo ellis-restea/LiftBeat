@@ -53,6 +53,7 @@ export default function Workout() {
   const [setsCompleted, setSetsCompleted] = useState(0);
   const [noDevice, setNoDevice] = useState(false);
   const [waitingForDevice, setWaitingForDevice] = useState(false);
+  const [premiumRequired, setPremiumRequired] = useState(false);
 
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   // Timestamp of the last playback command — poll is suppressed for 1.5s after
@@ -221,64 +222,78 @@ export default function Workout() {
     return () => clearInterval(timerRef.current!);
   }, [workoutState, currentExercise]);
 
+  // Shared helper: play the first LiftSync playlist on a specific device
+  const startPlaybackOnDevice = useCallback(
+    async (deviceId: string) => {
+      if (!session?.accessToken || playlistIds.length === 0) return;
+      lastCommandRef.current = Date.now();
+      const res = await fetch(
+        `https://api.spotify.com/v1/me/player/play?device_id=${deviceId}`,
+        {
+          method: "PUT",
+          headers: {
+            Authorization: `Bearer ${session.accessToken}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ context_uri: `spotify:playlist:${playlistIds[0]}` }),
+        }
+      );
+      if (res.ok || res.status === 204) {
+        setIsPlaying(true);
+        setNoDevice(false);
+        setWaitingForDevice(false);
+        setWorkoutState("warmup");
+      } else if (res.status === 403) {
+        setPremiumRequired(true);
+        setWaitingForDevice(false);
+      } else {
+        setNoDevice(true);
+        setWaitingForDevice(true);
+      }
+    },
+    [session, playlistIds]
+  );
+
   const handleStart = async () => {
     if (!session?.accessToken) return;
-    const body = playlistIds.length > 0
-      ? { context_uri: `spotify:playlist:${playlistIds[0]}` }
-      : {};
-    lastCommandRef.current = Date.now();
-    const res = await fetch("https://api.spotify.com/v1/me/player/play", {
-      method: "PUT",
-      headers: {
-        Authorization: `Bearer ${session.accessToken}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(body),
+    const devicesRes = await fetch("https://api.spotify.com/v1/me/player/devices", {
+      headers: { Authorization: `Bearer ${session.accessToken}` },
     });
-    if (res.ok || res.status === 204) {
-      setIsPlaying(true);
-      setNoDevice(false);
-      setWorkoutState("warmup");
-    } else {
-      // 404 = no active device, 403 = premium/device issue
+    if (devicesRes.status === 403) {
+      setPremiumRequired(true);
+      return;
+    }
+    if (!devicesRes.ok) {
       setNoDevice(true);
       setWaitingForDevice(true);
+      return;
     }
+    const { devices } = await devicesRes.json();
+    const device = devices?.find((d: any) => d.is_active) ?? devices?.[0];
+    if (!device) {
+      setNoDevice(true);
+      setWaitingForDevice(true);
+      return;
+    }
+    await startPlaybackOnDevice(device.id);
   };
 
-  // Poll every 3s when waiting for a Spotify device to become active
+  // Poll every 3s for an active device when no device was available on start
   useEffect(() => {
     if (!waitingForDevice || !session?.accessToken) return;
     const poll = setInterval(async () => {
-      const res = await fetch("https://api.spotify.com/v1/me/player", {
+      const res = await fetch("https://api.spotify.com/v1/me/player/devices", {
         headers: { Authorization: `Bearer ${session.accessToken}` },
       });
-      if (res.status !== 200) return;
-      const data = await res.json();
-      if (!data?.device) return;
-      // Active device found — start playback and kick off the workout
+      if (!res.ok) return;
+      const { devices } = await res.json();
+      const device = devices?.find((d: any) => d.is_active) ?? devices?.[0];
+      if (!device) return;
       clearInterval(poll);
-      setWaitingForDevice(false);
-      setNoDevice(false);
-      const body = playlistIds.length > 0
-        ? { context_uri: `spotify:playlist:${playlistIds[0]}` }
-        : {};
-      lastCommandRef.current = Date.now();
-      const playRes = await fetch("https://api.spotify.com/v1/me/player/play", {
-        method: "PUT",
-        headers: {
-          Authorization: `Bearer ${session.accessToken}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(body),
-      });
-      if (playRes.ok || playRes.status === 204) {
-        setIsPlaying(true);
-        setWorkoutState("warmup");
-      }
+      await startPlaybackOnDevice(device.id);
     }, 3000);
     return () => clearInterval(poll);
-  }, [waitingForDevice, session, playlistIds]);
+  }, [waitingForDevice, session, startPlaybackOnDevice]);
 
   const handleStartSet = () => {
     setWorkoutState("exercising");
@@ -491,9 +506,17 @@ export default function Workout() {
       className={`min-h-screen ${bgColors[workoutState]} text-white flex flex-col items-center justify-between p-8 transition-colors`}
       style={{ transitionDuration: workoutState === "exercising" ? "300ms" : "700ms" }}
     >
-      {noDevice && (
-        <div className="fixed top-0 left-0 right-0 z-50 bg-amber-900/90 backdrop-blur-sm text-amber-200 text-sm text-center py-2.5 px-4">
-          {waitingForDevice
+      {(noDevice || premiumRequired) && (
+        <div
+          className={`fixed top-0 left-0 right-0 z-50 backdrop-blur-sm text-sm text-center py-2.5 px-4 ${
+            premiumRequired
+              ? "bg-red-900/90 text-red-200"
+              : "bg-amber-900/90 text-amber-200"
+          }`}
+        >
+          {premiumRequired
+            ? "LiftSync requires Spotify Premium"
+            : waitingForDevice
             ? "Open Spotify on your device — workout will start automatically"
             : "Open Spotify on your device to enable music"}
         </div>
