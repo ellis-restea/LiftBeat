@@ -1,6 +1,6 @@
 "use client";
 import { useSession, signOut } from "next-auth/react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 
@@ -16,12 +16,9 @@ export default function Dashboard() {
   const [workouts, setWorkouts] = useState<Workout[]>([]);
   const [hasPlaylists, setHasPlaylists] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editName, setEditName] = useState("");
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [playlistCoverUrl, setPlaylistCoverUrl] = useState<string | null>(null);
   const [firstPlaylistId, setFirstPlaylistId] = useState<string | null>(null);
-  const editInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (status === "unauthenticated") router.push("/");
@@ -50,7 +47,6 @@ export default function Dashboard() {
     });
   }, [session]);
 
-  // Fetch the first playlist's cover art from Spotify for the widget
   useEffect(() => {
     if (!firstPlaylistId || !session?.accessToken) return;
     fetch(`https://api.spotify.com/v1/playlists/${firstPlaylistId}?fields=images`, {
@@ -63,26 +59,8 @@ export default function Dashboard() {
       .catch(() => {});
   }, [firstPlaylistId, session]);
 
-  const startEdit = (workout: Workout, e: React.MouseEvent) => {
-    e.stopPropagation();
-    setDeletingId(null);
-    setEditingId(workout.id);
-    setEditName(workout.name);
-  };
-
-  const saveEdit = async (workoutId: string) => {
-    const trimmed = editName.trim();
-    setEditingId(null);
-    if (!trimmed) return;
-    await supabase.from("workouts").update({ name: trimmed }).eq("id", workoutId);
-    setWorkouts((prev) =>
-      prev.map((w) => (w.id === workoutId ? { ...w, name: trimmed } : w))
-    );
-  };
-
   const startDelete = (workoutId: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    setEditingId(null);
     setDeletingId(workoutId);
   };
 
@@ -121,14 +99,15 @@ export default function Dashboard() {
               role="button"
               tabIndex={0}
               onClick={() => router.push(hasPlaylists ? "/playlist-select?mode=edit" : "/playlist-select")}
-              className="relative w-12 h-12 rounded-full shrink-0 cursor-pointer"
-              style={{
-                backgroundImage: playlistCoverUrl ? `url(${playlistCoverUrl})` : undefined,
-                backgroundSize: "cover",
-                backgroundPosition: "center",
-                backgroundColor: playlistCoverUrl ? undefined : "#374151",
-              }}
+              className="relative w-12 h-12 rounded-full shrink-0 cursor-pointer overflow-hidden bg-gray-700"
             >
+              {playlistCoverUrl && (
+                <img
+                  src={playlistCoverUrl}
+                  alt="playlist"
+                  className="absolute inset-0 w-full h-full object-cover"
+                />
+              )}
               <div className="absolute inset-0 rounded-full bg-black/40" />
               <div className="absolute inset-0 flex items-center justify-center">
                 <svg viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4 text-white">
@@ -155,7 +134,6 @@ export default function Dashboard() {
             </div>
           ) : (
             workouts.map((workout) => {
-              const isEditing = editingId === workout.id;
               const isDeleting = deletingId === workout.id;
 
               if (isDeleting) {
@@ -188,50 +166,34 @@ export default function Dashboard() {
               return (
                 <div
                   key={workout.id}
-                  onClick={() => {
-                    if (isEditing) return;
-                    router.push(`/workout?workout_id=${workout.id}`);
-                  }}
+                  onClick={() => router.push(`/workout?workout_id=${workout.id}`)}
                   className="flex items-center justify-between bg-gray-900 hover:bg-gray-800 border border-transparent hover:border-gray-700 rounded-xl p-4 cursor-pointer transition"
                 >
                   <div className="min-w-0 flex-1">
-                    {isEditing ? (
-                      <input
-                        ref={editInputRef}
-                        autoFocus
-                        value={editName}
-                        onChange={(e) => setEditName(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") saveEdit(workout.id);
-                          if (e.key === "Escape") setEditingId(null);
+                    <div className="flex items-center gap-2">
+                      <p className="font-semibold truncate">{workout.name}</p>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          router.push(`/workout-setup?workout_id=${workout.id}`);
                         }}
-                        onBlur={() => saveEdit(workout.id)}
-                        onClick={(e) => e.stopPropagation()}
-                        className="bg-gray-800 text-white rounded-lg px-3 py-1 text-sm outline-none focus:ring-2 focus:ring-green-500 w-full max-w-xs"
-                      />
-                    ) : (
-                      <div className="flex items-center gap-2">
-                        <p className="font-semibold truncate">{workout.name}</p>
-                        <button
-                          onClick={(e) => startEdit(workout, e)}
-                          className="text-gray-600 hover:text-gray-300 transition shrink-0"
-                          title="Rename"
-                        >
-                          <svg viewBox="0 0 24 24" fill="currentColor" className="w-3.5 h-3.5">
-                            <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z" />
-                          </svg>
-                        </button>
-                        <button
-                          onClick={(e) => startDelete(workout.id, e)}
-                          className="text-gray-600 hover:text-red-400 transition shrink-0"
-                          title="Delete"
-                        >
-                          <svg viewBox="0 0 24 24" fill="currentColor" className="w-3.5 h-3.5">
-                            <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z" />
-                          </svg>
-                        </button>
-                      </div>
-                    )}
+                        className="text-gray-600 hover:text-gray-300 transition shrink-0"
+                        title="Edit workout"
+                      >
+                        <svg viewBox="0 0 24 24" fill="currentColor" className="w-3.5 h-3.5">
+                          <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z" />
+                        </svg>
+                      </button>
+                      <button
+                        onClick={(e) => startDelete(workout.id, e)}
+                        className="text-gray-600 hover:text-red-400 transition shrink-0"
+                        title="Delete"
+                      >
+                        <svg viewBox="0 0 24 24" fill="currentColor" className="w-3.5 h-3.5">
+                          <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z" />
+                        </svg>
+                      </button>
+                    </div>
                     <p className="text-gray-500 text-sm mt-0.5">
                       {new Date(workout.created_at).toLocaleDateString("en-US", {
                         month: "short",
