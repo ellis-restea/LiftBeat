@@ -101,7 +101,7 @@ export default function WorkoutSetup() {
       return;
     }
 
-    router.push(`/workout?workout_id=${workout.id}`);
+    router.push("/dashboard");
   };
 
   return (
@@ -204,7 +204,7 @@ export default function WorkoutSetup() {
             disabled={!workoutName.trim() || saving}
             className="w-full bg-green-500 hover:bg-green-400 disabled:opacity-50 text-black font-bold py-4 rounded-xl text-lg transition"
           >
-            {saving ? "Saving..." : "Start Workout →"}
+            {saving ? "Saving..." : "Save Workout →"}
           </button>
         </div>
       </div>
