@@ -21,6 +21,7 @@ export default function WorkoutSetup() {
     { name: "", sets: 3, reps: 12, rest_seconds: 120, superset_with: null },
   ]);
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   const addExercise = () => {
     setExercises([...exercises, { name: "", sets: 3, reps: 12, rest_seconds: 120, superset_with: null }]);
@@ -75,9 +76,9 @@ export default function WorkoutSetup() {
 
 
 
-if (error || !workout) { setSaving(false); return; }
+    if (error || !workout) { setSaving(false); return; }
 
-    await supabase.from("exercises").insert(
+    const { error: exError } = await supabase.from("exercises").insert(
       exercises.map((ex, i) => ({
         workout_id: workout.id,
         name: ex.name || `Exercise ${i + 1}`,
@@ -88,6 +89,17 @@ if (error || !workout) { setSaving(false); return; }
         superset_with: ex.superset_with,
       }))
     );
+
+    if (exError) {
+      console.error("[LiftSync] Exercise insert failed:", exError);
+      // Roll back the workout row so it doesn't orphan
+      await supabase.from("workouts").delete().eq("id", workout.id);
+      setSaveError(
+        `Failed to save exercises: ${exError.message}. If you see "column superset_with does not exist", run this SQL in Supabase: ALTER TABLE exercises ADD COLUMN superset_with integer;`
+      );
+      setSaving(false);
+      return;
+    }
 
     router.push(`/workout?workout_id=${workout.id}`);
   };
@@ -180,6 +192,12 @@ if (error || !workout) { setSaving(false); return; }
           >
             + Add Exercise
           </button>
+
+          {saveError && (
+            <div className="bg-red-950 border border-red-500/40 rounded-xl p-4 text-red-300 text-sm">
+              {saveError}
+            </div>
+          )}
 
           <button
             onClick={handleStart}

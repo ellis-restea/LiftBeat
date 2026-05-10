@@ -69,8 +69,12 @@ export default function Workout() {
       .select("*")
       .eq("workout_id", workoutId)
       .order("order_index")
-      .then(({ data }) => {
-        if (data) setExercises(data);
+      .then(({ data, error }) => {
+        if (error) console.error("[LiftSync] Exercise load error:", error);
+        if (data) {
+          console.log("[LiftSync] Exercises loaded:", data.length, data);
+          setExercises(data);
+        }
         setLoading(false);
       });
   }, [workoutId]);
@@ -303,6 +307,25 @@ export default function Workout() {
       </div>
     );
 
+  if (exercises.length === 0)
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen bg-black text-white gap-4 p-8 text-center">
+        <p className="text-red-400 text-lg font-semibold">No exercises found</p>
+        <p className="text-gray-500 text-sm max-w-xs">
+          The exercises failed to save. Open the browser console for the exact error — you likely need to run:
+        </p>
+        <code className="bg-gray-900 text-green-400 text-xs px-4 py-3 rounded-xl">
+          ALTER TABLE exercises ADD COLUMN superset_with integer;
+        </code>
+        <button
+          onClick={() => router.push("/dashboard")}
+          className="text-gray-400 hover:text-white underline text-sm mt-2"
+        >
+          Back to dashboard
+        </button>
+      </div>
+    );
+
   if (workoutState === "done")
     return (
       <div className="flex flex-col items-center justify-center min-h-screen bg-black text-white gap-6">
@@ -357,17 +380,17 @@ export default function Workout() {
     >
       {/* Top */}
       <div className="text-center mt-4 w-full">
-        <p className="text-gray-400 text-xs uppercase tracking-widest mb-1">
+        <p className="text-gray-400 text-xs uppercase tracking-widest mb-2">
           Exercise {currentExerciseIndex + 1} of {exercises.length}
         </p>
-        <h2 className="text-2xl font-bold">{currentExercise?.name}</h2>
+        {isInSuperset && (
+          <span className="inline-block bg-green-500/20 text-green-400 text-xs font-bold px-3 py-0.5 rounded-full uppercase tracking-widest border border-green-500/30 mb-2">
+            Superset
+          </span>
+        )}
+        <h2 className="text-2xl font-bold">{currentExercise?.name || "—"}</h2>
         <p className="text-gray-400 mt-1 text-sm">
           {currentExercise?.reps} reps · Set {currentSet} of {currentExercise?.sets}
-          {isInSuperset && (
-            <span className="ml-2 text-green-400 font-semibold text-xs uppercase tracking-wider">
-              Superset
-            </span>
-          )}
         </p>
       </div>
 
