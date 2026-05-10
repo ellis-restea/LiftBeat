@@ -48,7 +48,16 @@ export default function Workout() {
   const [songProgress, setSongProgress] = useState(0);
   const [songPosition, setSongPosition] = useState(0);
   const [songDuration, setSongDuration] = useState(0);
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragProgress, setDragProgress] = useState(0);
+
   const timerRef = useRef<NodeJS.Timeout | null>(null);
+  // Timestamp of the last playback command — poll is suppressed for 1.5s after
+  // any command so the optimistic UI state isn't immediately overwritten by a
+  // stale Spotify response (the flicker fix)
+  const lastCommandRef = useRef<number>(0);
+  const progressBarRef = useRef<HTMLDivElement>(null);
+  const isDraggingRef = useRef(false);
 
   const currentExercise = exercises[currentExerciseIndex];
   const totalSets = exercises.reduce((acc, ex) => acc + ex.sets, 0);
@@ -61,6 +70,10 @@ export default function Workout() {
   const isInSuperset =
     currentExercise?.superset_with != null ||
     (nextEx?.superset_with != null && nextEx.superset_with === currentExercise?.order_index);
+
+  // Display values — use local drag state while scrubbing
+  const displayProgress = isDragging ? dragProgress * 100 : songProgress;
+  const displayPosition = isDragging ? Math.floor(dragProgress * songDuration) : songPosition;
 
   useEffect(() => {
     if (!workoutId) return;
@@ -91,7 +104,6 @@ export default function Workout() {
       });
   }, [session]);
 
-  // Load and analyze playlist BPMs
   useEffect(() => {
     if (!session?.accessToken || playlistIds.length === 0 || tracksLoaded) return;
 
@@ -137,6 +149,7 @@ export default function Workout() {
       const bucket = high ? highBpmTracks : lowBpmTracks;
       if (bucket.length === 0) return;
       const track = bucket[Math.floor(Math.random() * bucket.length)];
+      lastCommandRef.current = Date.now();
       await fetch("https://api.spotify.com/v1/me/player/play", {
         method: "PUT",
         headers: {
@@ -153,6 +166,10 @@ export default function Workout() {
 
   const fetchCurrentTrack = useCallback(async () => {
     if (!session?.accessToken) return;
+    // Suppress poll during command cooldown or active scrub
+    if (Date.now() - lastCommandRef.current < 1500) return;
+    if (isDraggingRef.current) return;
+
     const res = await fetch("https://api.spotify.com/v1/me/player/currently-playing", {
       headers: { Authorization: `Bearer ${session.accessToken}` },
     });
@@ -175,15 +192,9 @@ export default function Workout() {
     return () => clearInterval(interval);
   }, [fetchCurrentTrack]);
 
-  // Keep a ref so the timer closure always calls the latest playTrack
-  // without needing it as a dep (which would restart the timer on track load)
   const playTrackRef = useRef(playTrack);
   useEffect(() => { playTrackRef.current = playTrack; }, [playTrack]);
 
-  // Single effect: sets timeLeft AND starts the interval atomically.
-  // Two separate effects had a race: the "start" effect read timeLeft=0
-  // before the "init" effect's setState had committed, so the timer
-  // bailed immediately and never ticked.
   useEffect(() => {
     if (workoutState !== "resting" || !currentExercise) return;
 
@@ -223,18 +234,16 @@ export default function Workout() {
     const currentIsSupersetB = currentExercise.superset_with != null;
 
     if (nextIsSuperset) {
-      // A → B: jump immediately, no rest, stay in exercising
       setCurrentExerciseIndex(currentExerciseIndex + 1);
       return;
     }
 
     if (currentIsSupersetB) {
-      // B done: rest using A's rest_seconds, then back to A for next set
       const pairedAIdx = exercises.findIndex(
         (ex) => ex.order_index === currentExercise.superset_with
       );
       if (pairedAIdx === -1) {
-        // Superset partner missing — fall through to normal exercise logic
+        // fall through to normal logic
       } else {
         const pairedA = exercises[pairedAIdx];
         if (currentSet < pairedA.sets) {
@@ -243,7 +252,6 @@ export default function Workout() {
           setWorkoutState("resting");
           playTrack(false);
         } else {
-          // All sets of this superset pair done — move to exercise after B
           if (currentExerciseIndex + 1 < exercises.length) {
             setCurrentExerciseIndex(currentExerciseIndex + 1);
             setCurrentSet(1);
@@ -257,7 +265,6 @@ export default function Workout() {
       }
     }
 
-    // Normal exercise
     if (currentSet < currentExercise.sets) {
       setCurrentSet(currentSet + 1);
       setWorkoutState("resting");
@@ -274,31 +281,72 @@ export default function Workout() {
 
   const togglePlayPause = async () => {
     if (!session?.accessToken) return;
-    await fetch(`https://api.spotify.com/v1/me/player/${isPlaying ? "pause" : "play"}`, {
+    const next = !isPlaying;
+    setIsPlaying(next);                   // optimistic — cooldown prevents poll overwrite
+    lastCommandRef.current = Date.now();
+    await fetch(`https://api.spotify.com/v1/me/player/${next ? "play" : "pause"}`, {
       method: "PUT",
       headers: { Authorization: `Bearer ${session.accessToken}` },
     });
-    setIsPlaying(!isPlaying);
   };
 
   const skipTrack = async () => {
     if (!session?.accessToken) return;
+    lastCommandRef.current = Date.now();
     await fetch("https://api.spotify.com/v1/me/player/next", {
       method: "POST",
       headers: { Authorization: `Bearer ${session.accessToken}` },
     });
-    setTimeout(fetchCurrentTrack, 500);
   };
 
   const prevTrack = async () => {
     if (!session?.accessToken) return;
+    lastCommandRef.current = Date.now();
     await fetch("https://api.spotify.com/v1/me/player/previous", {
       method: "POST",
       headers: { Authorization: `Bearer ${session.accessToken}` },
     });
-    setTimeout(fetchCurrentTrack, 500);
   };
 
+  // --- Progress bar scrubbing ---
+  const getProgressFromX = (clientX: number): number => {
+    if (!progressBarRef.current) return 0;
+    const rect = progressBarRef.current.getBoundingClientRect();
+    return Math.max(0, Math.min((clientX - rect.left) / rect.width, 1));
+  };
+
+  const seekTo = async (fraction: number) => {
+    const positionMs = Math.floor(fraction * songDuration);
+    lastCommandRef.current = Date.now();
+    setSongPosition(positionMs);
+    setSongProgress(Math.round(fraction * 100));
+    if (!session?.accessToken || !songDuration) return;
+    await fetch(
+      `https://api.spotify.com/v1/me/player/seek?position_ms=${positionMs}`,
+      { method: "PUT", headers: { Authorization: `Bearer ${session.accessToken}` } }
+    );
+  };
+
+  const handleProgressPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    e.currentTarget.setPointerCapture(e.pointerId); // keep events firing during drag outside element
+    isDraggingRef.current = true;
+    setIsDragging(true);
+    setDragProgress(getProgressFromX(e.clientX));
+  };
+
+  const handleProgressPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!isDraggingRef.current) return;
+    setDragProgress(getProgressFromX(e.clientX));
+  };
+
+  const handleProgressPointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!isDraggingRef.current) return;
+    isDraggingRef.current = false;
+    setIsDragging(false);
+    seekTo(getProgressFromX(e.clientX));
+  };
+
+  // --- Early returns ---
   if (loading)
     return (
       <div className="flex items-center justify-center min-h-screen bg-black text-white">
@@ -423,28 +471,63 @@ export default function Workout() {
           <p className="text-gray-400 text-sm">{currentTrack?.artists?.[0]?.name}</p>
         </div>
 
-        <div className="w-full">
-          <div className="w-full bg-gray-700 rounded-full h-1 mb-1">
+        {/* Interactive progress bar */}
+        <div className="w-full select-none">
+          <div
+            ref={progressBarRef}
+            className="w-full bg-gray-700 rounded-full h-1.5 mb-2 cursor-pointer relative group"
+            onPointerDown={handleProgressPointerDown}
+            onPointerMove={handleProgressPointerMove}
+            onPointerUp={handleProgressPointerUp}
+            onPointerCancel={handleProgressPointerUp}
+          >
             <div
-              className="bg-white h-1 rounded-full transition-all"
-              style={{ width: `${songProgress}%` }}
+              className="bg-white rounded-full h-1.5 pointer-events-none"
+              style={{ width: `${displayProgress}%` }}
+            />
+            {/* Scrub thumb — visible on hover or during drag */}
+            <div
+              className={`absolute top-1/2 w-3.5 h-3.5 bg-white rounded-full shadow-md pointer-events-none transition-opacity ${isDragging ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
+              style={{ left: `${displayProgress}%`, transform: "translate(-50%, -50%)" }}
             />
           </div>
           <div className="flex justify-between text-xs text-gray-400">
-            <span>{formatMs(songPosition)}</span>
-            <span>-{formatMs(Math.max(0, songDuration - songPosition))}</span>
+            <span>{formatMs(displayPosition)}</span>
+            <span>-{formatMs(Math.max(0, songDuration - displayPosition))}</span>
           </div>
         </div>
 
+        {/* Playback controls */}
         <div className="flex items-center gap-8">
-          <button onClick={prevTrack} className="text-gray-400 hover:text-white text-3xl">
-            ⏮
+          <button
+            onClick={prevTrack}
+            className="text-gray-400 active:text-white transition-colors touch-manipulation"
+          >
+            <svg viewBox="0 0 24 24" fill="currentColor" className="w-8 h-8">
+              <path d="M6 6h2v12H6zm3.5 6 8.5 6V6z" />
+            </svg>
           </button>
-          <button onClick={togglePlayPause} className="text-white text-5xl">
-            {isPlaying ? "⏸" : "▶️"}
+          <button
+            onClick={togglePlayPause}
+            className="text-white active:scale-95 transition-transform touch-manipulation"
+          >
+            {isPlaying ? (
+              <svg viewBox="0 0 24 24" fill="currentColor" className="w-14 h-14">
+                <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" />
+              </svg>
+            ) : (
+              <svg viewBox="0 0 24 24" fill="currentColor" className="w-14 h-14">
+                <path d="M8 5v14l11-7z" />
+              </svg>
+            )}
           </button>
-          <button onClick={skipTrack} className="text-gray-400 hover:text-white text-3xl">
-            ⏭
+          <button
+            onClick={skipTrack}
+            className="text-gray-400 active:text-white transition-colors touch-manipulation"
+          >
+            <svg viewBox="0 0 24 24" fill="currentColor" className="w-8 h-8">
+              <path d="M6 18l8.5-6L6 6v12zm2-8.14L11.03 12 8 14.14V9.86zM16 6h2v12h-2z" />
+            </svg>
           </button>
         </div>
       </div>
@@ -454,7 +537,7 @@ export default function Workout() {
         {workoutState === "idle" && (
           <button
             onClick={handleStart}
-            className="w-full bg-amber-500 hover:bg-amber-400 text-black font-bold py-5 rounded-2xl text-xl"
+            className="w-full bg-amber-500 hover:bg-amber-400 text-black font-bold py-5 rounded-2xl text-xl touch-manipulation"
           >
             Start Workout 🔥
           </button>
@@ -462,7 +545,7 @@ export default function Workout() {
         {workoutState === "warmup" && (
           <button
             onClick={handleStartSet}
-            className="w-full bg-red-500 hover:bg-red-400 text-white font-bold py-5 rounded-2xl text-xl"
+            className="w-full bg-red-500 hover:bg-red-400 text-white font-bold py-5 rounded-2xl text-xl touch-manipulation"
           >
             Start Set 💪
           </button>
@@ -470,7 +553,7 @@ export default function Workout() {
         {workoutState === "exercising" && (
           <button
             onClick={handleSetDone}
-            className="w-full bg-white text-black font-bold py-5 rounded-2xl text-xl"
+            className="w-full bg-white text-black font-bold py-5 rounded-2xl text-xl touch-manipulation"
           >
             Done with Set ✓
           </button>

@@ -129,4 +129,11 @@ Color scheme: keep dark/moody aesthetic (bg-red-950, bg-blue-950 etc.), accent c
 Done state should be green
 Exercising transition: 300ms (punchy), Resting transition: 700ms (slow calm fade)
 Full screen color wash transitions
-Start by fixing these in order: 1) superset logic, 2) save playlists to Supabase, 3) saved workout → direct to workout screen
+Start by fixing these in order: 1 superset logic, 2 save playlists to Supabase, 3 saved workout → direct to workout screen
+
+
+commit everything to GitHub with a descriptive message
+
+
+when to commit: Unit of Work: When you finish a single function, fix a bug, or complete a specific subtask.Working State: Every time your code is in a stable, buildable state.Before Risky Changes: Just before you attempt a major refactor or "try something out" that might break things.End of Session: At least once per day to ensure your local progress is backed up.
+
