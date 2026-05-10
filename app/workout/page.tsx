@@ -11,6 +11,7 @@ interface Exercise {
   reps: number;
   rest_seconds: number;
   order_index: number;
+  superset_with: number | null;
 }
 
 type WorkoutState = "idle" | "warmup" | "exercising" | "resting" | "done";
@@ -22,8 +23,7 @@ function formatTime(seconds: number) {
 }
 
 function formatMs(ms: number) {
-  const totalSeconds = Math.floor(ms / 1000);
-  return formatTime(totalSeconds);
+  return formatTime(Math.floor(ms / 1000));
 }
 
 export default function Workout() {
@@ -32,9 +32,9 @@ export default function Workout() {
   const router = useRouter();
 
   const workoutId = searchParams.get("workout_id");
-  const playlistIds = searchParams.get("playlists")?.split(",") || [];
 
   const [exercises, setExercises] = useState<Exercise[]>([]);
+  const [playlistIds, setPlaylistIds] = useState<string[]>([]);
   const [currentExerciseIndex, setCurrentExerciseIndex] = useState(0);
   const [currentSet, setCurrentSet] = useState(1);
   const [workoutState, setWorkoutState] = useState<WorkoutState>("idle");
@@ -52,14 +52,17 @@ export default function Workout() {
 
   const currentExercise = exercises[currentExerciseIndex];
   const totalSets = exercises.reduce((acc, ex) => acc + ex.sets, 0);
-  const completedSets = exercises
-    .slice(0, currentExerciseIndex)
-    .reduce((acc, ex) => acc + ex.sets, 0) + (currentSet - 1);
-  const workoutProgress = Math.round((completedSets / totalSets) * 100);
+  const completedSets =
+    exercises.slice(0, currentExerciseIndex).reduce((acc, ex) => acc + ex.sets, 0) +
+    (currentSet - 1);
+  const workoutProgress = totalSets > 0 ? Math.round((completedSets / totalSets) * 100) : 0;
 
-  // Load exercises
+  const nextEx = exercises[currentExerciseIndex + 1];
+  const isInSuperset =
+    currentExercise?.superset_with !== null ||
+    nextEx?.superset_with === currentExercise?.order_index;
+
   useEffect(() => {
-   
     if (!workoutId) return;
     supabase
       .from("exercises")
@@ -72,10 +75,22 @@ export default function Workout() {
       });
   }, [workoutId]);
 
+  // Load playlists from Supabase
+  useEffect(() => {
+    if (!session?.user?.name) return;
+    supabase
+      .from("user_playlists")
+      .select("playlist_ids")
+      .eq("user_id", session.user.name)
+      .single()
+      .then(({ data }) => {
+        if (data?.playlist_ids) setPlaylistIds(data.playlist_ids);
+      });
+  }, [session]);
+
   // Load and analyze playlist BPMs
   useEffect(() => {
-    
-     if (!session?.accessToken || playlistIds.length === 0 || tracksLoaded) return;
+    if (!session?.accessToken || playlistIds.length === 0 || tracksLoaded) return;
 
     const loadTracks = async () => {
       let allTracks: any[] = [];
@@ -102,38 +117,37 @@ export default function Workout() {
         bpm: featuresData.audio_features?.[i]?.tempo || 120,
       }));
 
-      const bpms = tracksWithBpm.map((t) => t.bpm).sort((a, b) => a - b);
+      const bpms = tracksWithBpm.map((t) => t.bpm).sort((a: number, b: number) => a - b);
       const median = bpms[Math.floor(bpms.length / 2)];
 
       setHighBpmTracks(tracksWithBpm.filter((t) => t.bpm >= median));
       setLowBpmTracks(tracksWithBpm.filter((t) => t.bpm < median));
-
       setTracksLoaded(true);
-
     };
 
     loadTracks();
-  }, [session, playlistIds]);
+  }, [session, playlistIds, tracksLoaded]);
 
-  // Play a track from the right bucket
-  const playTrack = useCallback(async (high: boolean) => {
-    if (!session?.accessToken) return;
-    const bucket = high ? highBpmTracks : lowBpmTracks;
-    if (bucket.length === 0) return;
-    const track = bucket[Math.floor(Math.random() * bucket.length)];
-    await fetch("https://api.spotify.com/v1/me/player/play", {
-      method: "PUT",
-      headers: {
-        Authorization: `Bearer ${session.accessToken}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ uris: [`spotify:track:${track.id}`] }),
-    });
-    setCurrentTrack(track);
-    setIsPlaying(true);
-  }, [session, highBpmTracks, lowBpmTracks]);
+  const playTrack = useCallback(
+    async (high: boolean) => {
+      if (!session?.accessToken) return;
+      const bucket = high ? highBpmTracks : lowBpmTracks;
+      if (bucket.length === 0) return;
+      const track = bucket[Math.floor(Math.random() * bucket.length)];
+      await fetch("https://api.spotify.com/v1/me/player/play", {
+        method: "PUT",
+        headers: {
+          Authorization: `Bearer ${session.accessToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ uris: [`spotify:track:${track.id}`] }),
+      });
+      setCurrentTrack(track);
+      setIsPlaying(true);
+    },
+    [session, highBpmTracks, lowBpmTracks]
+  );
 
-  // Poll current track + progress every second
   const fetchCurrentTrack = useCallback(async () => {
     if (!session?.accessToken) return;
     const res = await fetch("https://api.spotify.com/v1/me/player/currently-playing", {
@@ -158,7 +172,6 @@ export default function Workout() {
     return () => clearInterval(interval);
   }, [fetchCurrentTrack]);
 
-  // Rest timer
   useEffect(() => {
     if (workoutState !== "resting" || !currentExercise) return;
     setTimeLeft(currentExercise.rest_seconds);
@@ -191,6 +204,43 @@ export default function Workout() {
 
   const handleSetDone = () => {
     if (!currentExercise) return;
+
+    const nextExercise = exercises[currentExerciseIndex + 1];
+    const nextIsSuperset = nextExercise?.superset_with === currentExercise.order_index;
+    const currentIsSupersetB = currentExercise.superset_with !== null;
+
+    if (nextIsSuperset) {
+      // A → B: jump immediately, no rest, stay in exercising
+      setCurrentExerciseIndex(currentExerciseIndex + 1);
+      return;
+    }
+
+    if (currentIsSupersetB) {
+      // B done: rest using A's rest_seconds, then back to A for next set
+      const pairedAIdx = exercises.findIndex(
+        (ex) => ex.order_index === currentExercise.superset_with
+      );
+      const pairedA = exercises[pairedAIdx];
+      if (currentSet < pairedA.sets) {
+        setCurrentExerciseIndex(pairedAIdx);
+        setCurrentSet(currentSet + 1);
+        setWorkoutState("resting");
+        playTrack(false);
+      } else {
+        // All sets of this superset pair done — move to exercise after B
+        if (currentExerciseIndex + 1 < exercises.length) {
+          setCurrentExerciseIndex(currentExerciseIndex + 1);
+          setCurrentSet(1);
+          setWorkoutState("resting");
+          playTrack(false);
+        } else {
+          setWorkoutState("done");
+        }
+      }
+      return;
+    }
+
+    // Normal exercise
     if (currentSet < currentExercise.sets) {
       setCurrentSet(currentSet + 1);
       setWorkoutState("resting");
@@ -232,25 +282,27 @@ export default function Workout() {
     setTimeout(fetchCurrentTrack, 500);
   };
 
-  if (loading) return (
-    <div className="flex items-center justify-center min-h-screen bg-black text-white">
-      Loading workout...
-    </div>
-  );
+  if (loading)
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-black text-white">
+        Loading workout...
+      </div>
+    );
 
-  if (workoutState === "done") return (
-    <div className="flex flex-col items-center justify-center min-h-screen bg-black text-white gap-6">
-      <h1 className="text-5xl">💪</h1>
-      <h1 className="text-4xl font-bold">Workout Complete!</h1>
-      <p className="text-gray-400">{totalSets} sets crushed</p>
-      <button
-        onClick={() => router.push("/dashboard")}
-        className="bg-green-500 text-black font-bold px-8 py-4 rounded-xl text-lg mt-4"
-      >
-        Back to Dashboard
-      </button>
-    </div>
-  );
+  if (workoutState === "done")
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen bg-black text-white gap-6">
+        <h1 className="text-5xl">💪</h1>
+        <h1 className="text-4xl font-bold">Workout Complete!</h1>
+        <p className="text-gray-400">{totalSets} sets crushed</p>
+        <button
+          onClick={() => router.push("/dashboard")}
+          className="bg-green-500 text-black font-bold px-8 py-4 rounded-xl text-lg mt-4"
+        >
+          Back to Dashboard
+        </button>
+      </div>
+    );
 
   const bgColors: Record<WorkoutState, string> = {
     idle: "bg-gray-950",
@@ -285,8 +337,10 @@ export default function Workout() {
   };
 
   return (
-    <div className={`min-h-screen ${bgColors[workoutState]} text-white flex flex-col items-center justify-between p-8 transition-colors duration-700`}>
-
+    <div
+      className={`min-h-screen ${bgColors[workoutState]} text-white flex flex-col items-center justify-between p-8 transition-colors`}
+      style={{ transitionDuration: workoutState === "exercising" ? "300ms" : "700ms" }}
+    >
       {/* Top */}
       <div className="text-center mt-4 w-full">
         <p className="text-gray-400 text-xs uppercase tracking-widest mb-1">
@@ -295,38 +349,44 @@ export default function Workout() {
         <h2 className="text-2xl font-bold">{currentExercise?.name}</h2>
         <p className="text-gray-400 mt-1 text-sm">
           {currentExercise?.reps} reps · Set {currentSet} of {currentExercise?.sets}
+          {isInSuperset && (
+            <span className="ml-2 text-green-400 font-semibold text-xs uppercase tracking-wider">
+              Superset
+            </span>
+          )}
         </p>
       </div>
 
       {/* Middle */}
       <div className="flex flex-col items-center gap-5 w-full max-w-sm">
-
-        {/* Status badge */}
-        <span className={`${badgeColors[workoutState]} text-white text-xs font-bold px-4 py-1 rounded-full uppercase tracking-widest`}>
+        <span
+          className={`${badgeColors[workoutState]} text-white text-xs font-bold px-4 py-1 rounded-full uppercase tracking-widest`}
+        >
           {statusLabels[workoutState]}
         </span>
 
-        {/* Rest timer */}
         {workoutState === "resting" && (
           <p className={`text-7xl font-bold ${accentColors[workoutState]}`}>
             {formatTime(timeLeft)}
           </p>
         )}
 
-        {/* Album art */}
         {currentTrack?.album?.images?.[0] ? (
-          <img src={currentTrack.album.images[0].url} className="w-52 h-52 rounded-2xl shadow-2xl" />
+          <img
+            src={currentTrack.album.images[0].url}
+            className="w-52 h-52 rounded-2xl shadow-2xl"
+          />
         ) : (
-          <div className="w-52 h-52 rounded-2xl bg-gray-800 flex items-center justify-center text-5xl">♪</div>
+          <div className="w-52 h-52 rounded-2xl bg-gray-800 flex items-center justify-center text-5xl">
+            ♪
+          </div>
         )}
 
-        {/* Song info */}
         <div className="text-center">
           <p className="font-semibold text-lg">{currentTrack?.name || "No track playing"}</p>
           <p className="text-gray-400 text-sm">{currentTrack?.artists?.[0]?.name}</p>
         </div>
 
-        {/* Song progress bar */}
         <div className="w-full">
           <div className="w-full bg-gray-700 rounded-full h-1 mb-1">
             <div
@@ -340,37 +400,46 @@ export default function Workout() {
           </div>
         </div>
 
-        {/* Playback controls */}
         <div className="flex items-center gap-8">
-          <button onClick={prevTrack} className="text-gray-400 hover:text-white text-3xl">⏮</button>
+          <button onClick={prevTrack} className="text-gray-400 hover:text-white text-3xl">
+            ⏮
+          </button>
           <button onClick={togglePlayPause} className="text-white text-5xl">
             {isPlaying ? "⏸" : "▶️"}
           </button>
-          <button onClick={skipTrack} className="text-gray-400 hover:text-white text-3xl">⏭</button>
+          <button onClick={skipTrack} className="text-gray-400 hover:text-white text-3xl">
+            ⏭
+          </button>
         </div>
       </div>
 
       {/* Bottom */}
       <div className="w-full max-w-sm mb-4 flex flex-col gap-4">
-
-        {/* Action button */}
         {workoutState === "idle" && (
-          <button onClick={handleStart} className="w-full bg-amber-500 hover:bg-amber-400 text-black font-bold py-5 rounded-2xl text-xl">
+          <button
+            onClick={handleStart}
+            className="w-full bg-amber-500 hover:bg-amber-400 text-black font-bold py-5 rounded-2xl text-xl"
+          >
             Start Workout 🔥
           </button>
         )}
         {workoutState === "warmup" && (
-          <button onClick={handleStartSet} className="w-full bg-red-500 hover:bg-red-400 text-white font-bold py-5 rounded-2xl text-xl">
+          <button
+            onClick={handleStartSet}
+            className="w-full bg-red-500 hover:bg-red-400 text-white font-bold py-5 rounded-2xl text-xl"
+          >
             Start Set 💪
           </button>
         )}
         {workoutState === "exercising" && (
-          <button onClick={handleSetDone} className="w-full bg-white text-black font-bold py-5 rounded-2xl text-xl">
+          <button
+            onClick={handleSetDone}
+            className="w-full bg-white text-black font-bold py-5 rounded-2xl text-xl"
+          >
             Done with Set ✓
           </button>
         )}
 
-        {/* Workout progress bar */}
         <div className="w-full">
           <div className="flex justify-between text-xs text-gray-400 mb-1">
             <span>Workout Progress</span>

@@ -14,6 +14,7 @@ export default function Dashboard() {
   const { data: session, status } = useSession();
   const router = useRouter();
   const [workouts, setWorkouts] = useState<Workout[]>([]);
+  const [hasPlaylists, setHasPlaylists] = useState(false);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -21,17 +22,26 @@ export default function Dashboard() {
   }, [status]);
 
   useEffect(() => {
-    if (session?.user?.name) {
+    if (!session?.user?.name) return;
+    Promise.all([
       supabase
         .from("workouts")
         .select("*")
         .eq("user_id", session.user.name)
-        .order("created_at", { ascending: false })
-        .then(({ data }) => {
-          setWorkouts(data || []);
-          setLoading(false);
-        });
-    }
+        .order("created_at", { ascending: false }),
+      supabase
+        .from("user_playlists")
+        .select("playlist_ids")
+        .eq("user_id", session.user.name)
+        .single(),
+    ]).then(([workoutsRes, playlistsRes]) => {
+      setWorkouts(workoutsRes.data || []);
+      setHasPlaylists(
+        Array.isArray(playlistsRes.data?.playlist_ids) &&
+          playlistsRes.data.playlist_ids.length > 0
+      );
+      setLoading(false);
+    });
   }, [session]);
 
   if (status === "loading" || loading)
@@ -48,11 +58,27 @@ export default function Dashboard() {
         <div className="flex justify-between items-center mb-8">
           <div>
             <h1 className="text-3xl font-bold tracking-tight">LiftSync</h1>
-            <p className="text-gray-500 text-sm mt-1">Hey, {session?.user?.name?.split(" ")[0]} 👋</p>
+            <p className="text-gray-500 text-sm mt-1">
+              Hey, {session?.user?.name?.split(" ")[0]} 👋
+            </p>
           </div>
-          <button onClick={() => signOut()} className="text-gray-600 hover:text-white text-sm transition">
-            Sign out
-          </button>
+          <div className="flex items-center gap-3">
+            {hasPlaylists && (
+              <button
+                onClick={() => router.push("/playlist-select?mode=edit")}
+                className="text-gray-500 hover:text-white text-lg transition"
+                title="Edit playlists"
+              >
+                ✏️
+              </button>
+            )}
+            <button
+              onClick={() => signOut()}
+              className="text-gray-600 hover:text-white text-sm transition"
+            >
+              Sign out
+            </button>
+          </div>
         </div>
 
         <h2 className="text-lg font-semibold mb-4">Your Workouts</h2>
@@ -67,7 +93,7 @@ export default function Dashboard() {
             workouts.map((workout) => (
               <div
                 key={workout.id}
-                onClick={() => router.push(`/playlist-select?workout_id=${workout.id}`)}
+                onClick={() => router.push(`/workout?workout_id=${workout.id}`)}
                 className="flex items-center justify-between bg-gray-900 hover:bg-gray-800 border border-transparent hover:border-gray-700 rounded-xl p-4 cursor-pointer transition"
               >
                 <div>
@@ -86,7 +112,7 @@ export default function Dashboard() {
         </div>
 
         <button
-          onClick={() => router.push("/playlist-select")}
+          onClick={() => router.push(hasPlaylists ? "/workout-setup" : "/playlist-select")}
           className="w-full border border-gray-700 hover:border-green-500 hover:text-green-500 text-gray-400 font-semibold py-4 rounded-xl transition flex items-center justify-center gap-2"
         >
           <span className="text-xl">+</span> New Workout

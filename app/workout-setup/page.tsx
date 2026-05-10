@@ -1,5 +1,5 @@
 "use client";
-import { useSearchParams, useRouter } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { useSession } from "next-auth/react";
 import { supabase } from "@/lib/supabase";
@@ -13,11 +13,8 @@ interface Exercise {
 }
 
 export default function WorkoutSetup() {
-  const searchParams = useSearchParams();
   const router = useRouter();
   const { data: session } = useSession();
-
-  const playlists = searchParams.get("playlists")?.split(",") || [];
 
   const [workoutName, setWorkoutName] = useState("");
   const [exercises, setExercises] = useState<Exercise[]>([
@@ -61,15 +58,11 @@ if (error || !workout) { setSaving(false); return; }
         reps: ex.reps,
         rest_seconds: ex.rest_seconds,
         order_index: i,
-        superset_with: null,
+        superset_with: ex.superset_with,
       }))
     );
 
-    const params = new URLSearchParams({
-      playlists: playlists.join(","),
-      workout_id: workout.id,
-    });
-    router.push(`/workout?${params}`);
+    router.push(`/workout?workout_id=${workout.id}`);
   };
 
   return (
