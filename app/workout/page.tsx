@@ -151,34 +151,56 @@ function WorkoutInner() {
     // Step 2: GetSongBPM fallback
     const gsbKey = process.env.NEXT_PUBLIC_GETSONGBPM_KEY;
     if (gsbKey && trackName) {
-      try {
-        const gsbRes = await fetch(
-          `https://api.getsong.co/search/?api_key=${gsbKey}&type=song&lookup=${encodeURIComponent(trackName)}`
-        );
-        if (gsbRes.ok) {
-          const gsbData = await gsbRes.json();
-          const results: any[] = gsbData.search ?? [];
-          // Prefer a result whose artist matches, fall back to first result
-          const artistLower = artistName?.toLowerCase();
-          const match = artistLower
-            ? (results.find((r) => r.artist?.title?.toLowerCase().includes(artistLower)) ?? results[0])
-            : results[0];
-          const tempoRaw = match?.tempo;
-          const bpm = tempoRaw ? parseFloat(String(tempoRaw)) : null;
-          if (bpm !== null && !isNaN(bpm)) {
-            console.log(`[GetSongBPM] Found "${trackName}" (artist: ${match?.artist?.title ?? 'unknown'}) → ${bpm} BPM`);
-            bpmCacheRef.current.set(spotifyId, bpm);
-            bpmSourceCacheRef.current.set(spotifyId, "GetSongBPM");
-            return bpm;
-          } else {
-            console.log(`[GetSongBPM] NOT FOUND: ${trackName}`);
+      const artistLower = artistName?.toLowerCase();
+
+      const gsbSearch = async (title: string): Promise<{ bpm: number; matchedArtist: string } | null> => {
+        try {
+          const res = await fetch(
+            `https://api.getsong.co/search/?api_key=${gsbKey}&type=song&lookup=${encodeURIComponent(title)}`
+          );
+          if (!res.ok) {
+            console.log(`[GetSongBPM] HTTP ${res.status} for "${title}"`);
+            return null;
           }
-        } else {
-          console.log(`[GetSongBPM] HTTP ${gsbRes.status} for "${trackName}"`);
+          const data = await res.json();
+          const results: any[] = data.search ?? [];
+          if (artistLower) {
+            const match = results.find((r) => r.artist?.title?.toLowerCase().includes(artistLower));
+            if (!match) return null;
+            const bpm = parseFloat(String(match.tempo));
+            return isNaN(bpm) ? null : { bpm, matchedArtist: match.artist?.title ?? 'unknown' };
+          }
+          const first = results[0];
+          const bpm = parseFloat(String(first?.tempo));
+          return first && !isNaN(bpm) ? { bpm, matchedArtist: first.artist?.title ?? 'unknown' } : null;
+        } catch (err) {
+          console.log(`[GetSongBPM] threw for "${title}":`, err);
+          return null;
         }
-      } catch (err) {
-        console.log(`[GetSongBPM] threw for "${trackName}":`, err);
+      };
+
+      // Step 2a: full track name
+      let result = await gsbSearch(trackName);
+      if (result) {
+        console.log(`[GetSongBPM] Found "${trackName}" by ${result.matchedArtist} → ${result.bpm} BPM`);
+        bpmCacheRef.current.set(spotifyId, result.bpm);
+        bpmSourceCacheRef.current.set(spotifyId, "GetSongBPM");
+        return result.bpm;
       }
+
+      // Step 2b: strip remix/remaster suffix and retry
+      const baseTitle = trackName.replace(/\s*[-–]\s*.+$/, '').replace(/\s*\(.*?\)\s*$/, '').trim();
+      if (baseTitle && baseTitle !== trackName) {
+        result = await gsbSearch(baseTitle);
+        if (result) {
+          console.log(`[GetSongBPM] Found via base title: ${baseTitle} by ${result.matchedArtist} → ${result.bpm} BPM`);
+          bpmCacheRef.current.set(spotifyId, result.bpm);
+          bpmSourceCacheRef.current.set(spotifyId, "GetSongBPM");
+          return result.bpm;
+        }
+      }
+
+      console.log(`[GetSongBPM] NOT FOUND: ${trackName}`);
     }
 
     bpmCacheRef.current.set(spotifyId, null);
