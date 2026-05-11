@@ -110,9 +110,13 @@ function WorkoutInner() {
     return res;
   }, []);
 
-  // Look up BPM for a Spotify track ID via ReccoBeats, with Spotify audio-analysis
-  // fallback. Results cached in-memory to avoid redundant requests.
-  const getTrackBpm = useCallback(async (spotifyId: string): Promise<number | null> => {
+  // Look up BPM for a Spotify track ID. Priority: ReccoBeats → GetSongBPM → null.
+  // Results cached in-memory to avoid redundant requests.
+  const getTrackBpm = useCallback(async (
+    spotifyId: string,
+    trackName?: string,
+    artistName?: string,
+  ): Promise<number | null> => {
     if (bpmCacheRef.current.has(spotifyId)) {
       return bpmCacheRef.current.get(spotifyId) ?? null;
     }
@@ -142,28 +146,34 @@ function WorkoutInner() {
       console.log(`[BPM] ReccoBeats threw for ${spotifyId}:`, err);
     }
 
-    // Step 2: Spotify audio-analysis fallback
-    if (session?.accessToken) {
+    // Step 2: GetSongBPM fallback
+    const gsbKey = process.env.NEXT_PUBLIC_GETSONGBPM_KEY;
+    if (gsbKey && trackName) {
       try {
-        const analysisRes = await spotifyFetch(`https://api.spotify.com/v1/audio-analysis/${spotifyId}`, {
-          headers: { Authorization: `Bearer ${session.accessToken}` },
-        });
-        console.log(`[BPM] Spotify audio-analysis for ${spotifyId} → HTTP ${analysisRes.status}`);
-        if (analysisRes.ok) {
-          const analysis = await analysisRes.json();
-          const bpm = typeof analysis.track?.tempo === "number" ? analysis.track.tempo : null;
-          console.log(`[BPM] Spotify audio-analysis tempo: ${bpm ?? 'MISSING'}`);
-          bpmCacheRef.current.set(spotifyId, bpm);
-          return bpm;
+        const lookup = [artistName, trackName].filter(Boolean).map(encodeURIComponent).join('+');
+        const gsbRes = await fetch(
+          `https://api.getsongbpm.com/search/?api_key=${gsbKey}&type=both&lookup=${lookup}`
+        );
+        if (gsbRes.ok) {
+          const gsbData = await gsbRes.json();
+          const tempoRaw = gsbData.search?.[0]?.tempo;
+          const bpm = tempoRaw ? parseFloat(String(tempoRaw)) : null;
+          if (bpm !== null && !isNaN(bpm)) {
+            console.log(`[GetSongBPM] Found ${trackName} → ${bpm} BPM`);
+            bpmCacheRef.current.set(spotifyId, bpm);
+            return bpm;
+          } else {
+            console.log(`[GetSongBPM] NOT FOUND: ${trackName}`);
+          }
         }
       } catch (err) {
-        console.log(`[BPM] Spotify audio-analysis threw for ${spotifyId}:`, err);
+        console.log(`[GetSongBPM] threw for "${trackName}":`, err);
       }
     }
 
     bpmCacheRef.current.set(spotifyId, null);
     return null;
-  }, [session, spotifyFetch]);
+  }, [spotifyFetch]);
 
   // Skip tracks until one matches the desired energy level (or give up after 5 tries).
   const ensureTrackEnergy = useCallback(async (wantHigh: boolean) => {
@@ -178,7 +188,7 @@ function WorkoutInner() {
       if (!track?.id) break;
 
       const artist = track.artists?.[0]?.name;
-      const bpm = await getTrackBpm(track.id);
+      const bpm = await getTrackBpm(track.id, track.name, artist);
       console.log('[BPM] Current track:', track.name, 'by', artist, '| BPM:', bpm, '| Category:', bpm != null ? (bpm >= HIGH_BPM_CUTOFF ? 'HIGH' : 'LOW') : 'UNKNOWN');
 
       if (bpm === null) {
@@ -242,7 +252,7 @@ function WorkoutInner() {
               .slice(0, 6);
             console.log(`[Queue] Track changed — pre-loading BPM for ${upcoming.length} tracks`);
             Promise.all(
-              upcoming.map(async (t: any) => ({ name: t?.name, bpm: t?.id ? await getTrackBpm(t.id) : null }))
+              upcoming.map(async (t: any) => ({ name: t?.name, bpm: t?.id ? await getTrackBpm(t.id, t.name, t.artists?.[0]?.name) : null }))
             ).then((queueTracks) => {
               console.log('[BPM] Queue analysis:', queueTracks.map((t) => ({
                 name: t.name,
