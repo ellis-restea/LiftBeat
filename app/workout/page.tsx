@@ -28,7 +28,6 @@ function formatMs(ms: number) {
 
 const HIGH_BPM_CUTOFF = 120;
 
-
 export default function Workout() {
   const searchParams = useSearchParams();
   const { data: session } = useSession();
@@ -51,7 +50,6 @@ export default function Workout() {
   const [dragProgress, setDragProgress] = useState(0);
   const [setsCompleted, setSetsCompleted] = useState(0);
   const [noDevice, setNoDevice] = useState(false);
-  const [waitingForDevice, setWaitingForDevice] = useState(false);
   const [premiumRequired, setPremiumRequired] = useState(false);
 
   const timerRef = useRef<NodeJS.Timeout | null>(null);
@@ -60,6 +58,7 @@ export default function Workout() {
   const isDraggingRef = useRef(false);
   const bpmCacheRef = useRef<Map<string, number | null>>(new Map());
   const prevTrackIdRef = useRef<string | null>(null);
+  // Timestamp until which all Spotify API calls are blocked (rate limit)
   const rateLimitUntilRef = useRef<number>(0);
   const workoutStateRef = useRef<WorkoutState>("idle");
   const fetchCurrentTrackRef = useRef<() => Promise<void>>(async () => {});
@@ -90,6 +89,23 @@ export default function Workout() {
       });
   }, [workoutId]);
 
+  // Global Spotify fetch wrapper — blocks all calls while rate-limited, sets the
+  // global cooldown on any 429 response so every endpoint is paused together.
+  const spotifyFetch = useCallback(async (url: string, options?: RequestInit): Promise<Response> => {
+    if (Date.now() < rateLimitUntilRef.current) {
+      const remaining = Math.ceil((rateLimitUntilRef.current - Date.now()) / 1000);
+      console.log(`[Spotify] Blocked — rate limited for ${remaining}s more`);
+      return new Response(null, { status: 429 });
+    }
+    const res = await fetch(url, options);
+    if (res.status === 429) {
+      const retryAfter = parseInt(res.headers.get("retry-after") ?? "10", 10);
+      console.log(`[Spotify] Rate limited — blocking all API calls for ${retryAfter}s`);
+      rateLimitUntilRef.current = Date.now() + retryAfter * 1000;
+    }
+    return res;
+  }, []);
+
   // Look up BPM for a Spotify track ID via ReccoBeats, with Spotify audio-analysis
   // fallback. Results cached in-memory to avoid redundant requests.
   const getTrackBpm = useCallback(async (spotifyId: string): Promise<number | null> => {
@@ -97,7 +113,7 @@ export default function Workout() {
       return bpmCacheRef.current.get(spotifyId) ?? null;
     }
 
-    // Step 1: ReccoBeats (no auth required)
+    // Step 1: ReccoBeats (no auth required, not subject to Spotify rate limits)
     try {
       const lookupRes = await fetch(`https://api.reccobeats.com/v1/track?ids=${spotifyId}`);
       if (lookupRes.ok) {
@@ -125,7 +141,7 @@ export default function Workout() {
     // Step 2: Spotify audio-analysis fallback
     if (session?.accessToken) {
       try {
-        const analysisRes = await fetch(`https://api.spotify.com/v1/audio-analysis/${spotifyId}`, {
+        const analysisRes = await spotifyFetch(`https://api.spotify.com/v1/audio-analysis/${spotifyId}`, {
           headers: { Authorization: `Bearer ${session.accessToken}` },
         });
         console.log(`[BPM] Spotify audio-analysis for ${spotifyId} → HTTP ${analysisRes.status}`);
@@ -143,13 +159,13 @@ export default function Workout() {
 
     bpmCacheRef.current.set(spotifyId, null);
     return null;
-  }, [session]);
+  }, [session, spotifyFetch]);
 
-  // Skip tracks until we land on one with the desired energy level (or give up after 5 tries).
+  // Skip tracks until one matches the desired energy level (or give up after 5 tries).
   const ensureTrackEnergy = useCallback(async (wantHigh: boolean) => {
     if (!session?.accessToken) return;
     for (let attempt = 0; attempt < 5; attempt++) {
-      const res = await fetch("https://api.spotify.com/v1/me/player/currently-playing", {
+      const res = await spotifyFetch("https://api.spotify.com/v1/me/player/currently-playing", {
         headers: { Authorization: `Bearer ${session.accessToken}` },
       });
       if (res.status !== 200) break;
@@ -160,11 +176,11 @@ export default function Workout() {
       const artist = track.artists?.[0]?.name;
       const bpm = await getTrackBpm(track.id);
       console.log('[BPM] Current track:', track.name, 'by', artist, '| BPM:', bpm, '| Category:', bpm != null ? (bpm >= HIGH_BPM_CUTOFF ? 'HIGH' : 'LOW') : 'UNKNOWN');
+
       if (bpm === null) {
-        // BPM unknown after both APIs — skip rather than play wrong-energy music
         console.log(`[BPM] BPM unknown for "${track.name}" — skipping`);
         lastCommandRef.current = Date.now() - 1200;
-        await fetch("https://api.spotify.com/v1/me/player/next", {
+        await spotifyFetch("https://api.spotify.com/v1/me/player/next", {
           method: "POST",
           headers: { Authorization: `Bearer ${session.accessToken}` },
         });
@@ -175,50 +191,43 @@ export default function Workout() {
       const isHigh = bpm >= HIGH_BPM_CUTOFF;
       if (isHigh === wantHigh) {
         console.log('[BPM] Match found:', track.name, 'BPM:', bpm);
-        break; // correct energy, done
+        break;
       }
 
-      // Wrong energy — skip to next track
       console.log('[BPM] Skipping — needed:', wantHigh ? 'HIGH' : 'LOW', 'got:', isHigh ? 'HIGH' : 'LOW');
-      lastCommandRef.current = Date.now() - 1200; // short cooldown so poll catches new track fast
-      await fetch("https://api.spotify.com/v1/me/player/next", {
+      lastCommandRef.current = Date.now() - 1200;
+      await spotifyFetch("https://api.spotify.com/v1/me/player/next", {
         method: "POST",
         headers: { Authorization: `Bearer ${session.accessToken}` },
       });
       await new Promise((resolve) => setTimeout(resolve, 700));
     }
-    lastCommandRef.current = 0; // allow immediate UI refresh
+    lastCommandRef.current = 0;
     fetchCurrentTrackRef.current();
-  }, [session, getTrackBpm]);
+  }, [session, getTrackBpm, spotifyFetch]);
 
   const ensureTrackEnergyRef = useRef(ensureTrackEnergy);
   useEffect(() => { ensureTrackEnergyRef.current = ensureTrackEnergy; }, [ensureTrackEnergy]);
   useEffect(() => { workoutStateRef.current = workoutState; }, [workoutState]);
 
+  // Fetch current track and update UI. Only called explicitly — no interval polling.
   const fetchCurrentTrack = useCallback(async () => {
     if (!session?.accessToken) return;
     if (Date.now() - lastCommandRef.current < 1500) return;
     if (isDraggingRef.current) return;
-    if (Date.now() < rateLimitUntilRef.current) return;
 
-    const res = await fetch("https://api.spotify.com/v1/me/player/currently-playing", {
+    const res = await spotifyFetch("https://api.spotify.com/v1/me/player/currently-playing", {
       headers: { Authorization: `Bearer ${session.accessToken}` },
     });
-    if (res.status === 429) {
-      const retryAfter = parseInt(res.headers.get("retry-after") ?? "10", 10);
-      console.log(`[Poll] Rate limited — pausing poll for ${retryAfter}s`);
-      rateLimitUntilRef.current = Date.now() + retryAfter * 1000;
-      return;
-    }
     if (res.status === 204) { setNoDevice(true); return; }
     if (res.status === 200) {
       const data = await res.json();
       const newId = data?.item?.id;
 
-      // New track started — pre-warm BPM cache for the upcoming queue
+      // New track — pre-warm BPM cache for the upcoming queue (fire and forget)
       if (newId && newId !== prevTrackIdRef.current) {
         prevTrackIdRef.current = newId;
-        fetch("https://api.spotify.com/v1/me/player/queue", {
+        spotifyFetch("https://api.spotify.com/v1/me/player/queue", {
           headers: { Authorization: `Bearer ${session.accessToken}` },
         })
           .then((r) => (r.ok ? r.json() : null))
@@ -231,7 +240,11 @@ export default function Workout() {
             Promise.all(
               upcoming.map(async (t: any) => ({ name: t?.name, bpm: t?.id ? await getTrackBpm(t.id) : null }))
             ).then((queueTracks) => {
-              console.log('[BPM] Queue analysis:', queueTracks.map((t) => ({ name: t.name, bpm: t.bpm, category: t.bpm != null ? (t.bpm >= HIGH_BPM_CUTOFF ? 'HIGH' : 'LOW') : 'UNKNOWN' })));
+              console.log('[BPM] Queue analysis:', queueTracks.map((t) => ({
+                name: t.name,
+                bpm: t.bpm,
+                category: t.bpm != null ? (t.bpm >= HIGH_BPM_CUTOFF ? 'HIGH' : 'LOW') : 'UNKNOWN',
+              })));
             });
           })
           .catch(() => {});
@@ -248,29 +261,16 @@ export default function Workout() {
           : 0
       );
     }
-  }, [session, getTrackBpm]);
+  }, [session, getTrackBpm, spotifyFetch]);
 
   useEffect(() => { fetchCurrentTrackRef.current = fetchCurrentTrack; }, [fetchCurrentTrack]);
 
-  // Fetch once on load so the track display is populated immediately.
+  // Single fetch on page load — show whatever is currently playing in Spotify.
   useEffect(() => {
     if (session?.accessToken) fetchCurrentTrack();
   }, [fetchCurrentTrack]);
 
-  // 30s background sync — catch natural track changes and steer BPM if workout is active.
-  useEffect(() => {
-    const interval = setInterval(async () => {
-      const prevId = prevTrackIdRef.current;
-      await fetchCurrentTrack();
-      if (prevTrackIdRef.current !== prevId) {
-        const state = workoutStateRef.current;
-        if (state === "exercising" || state === "warmup") ensureTrackEnergyRef.current(true);
-        else if (state === "resting") ensureTrackEnergyRef.current(false);
-      }
-    }, 30000);
-    return () => clearInterval(interval);
-  }, [fetchCurrentTrack]);
-
+  // Rest timer — counts down, switches to exercising and steers BPM when done.
   useEffect(() => {
     if (workoutState !== "resting" || !currentExercise) return;
     const duration = currentExercise.rest_seconds;
@@ -288,19 +288,20 @@ export default function Workout() {
     return () => clearInterval(timerRef.current!);
   }, [workoutState, currentExercise]);
 
+  // Check for an active Spotify device once. If none found, show banner and let
+  // the user open Spotify and press Start again — no polling loop.
   const handleStart = async () => {
     if (!session?.accessToken) return;
-    const devicesRes = await fetch("https://api.spotify.com/v1/me/player/devices", {
+    const devicesRes = await spotifyFetch("https://api.spotify.com/v1/me/player/devices", {
       headers: { Authorization: `Bearer ${session.accessToken}` },
     });
     if (devicesRes.status === 403) { setPremiumRequired(true); return; }
-    if (!devicesRes.ok) { setNoDevice(true); setWaitingForDevice(true); return; }
+    if (!devicesRes.ok) { setNoDevice(true); return; }
     const { devices } = await devicesRes.json();
     const device = devices?.find((d: any) => d.is_active) ?? devices?.[0];
-    if (!device) { setNoDevice(true); setWaitingForDevice(true); return; }
+    if (!device) { setNoDevice(true); return; }
     setNoDevice(false);
-    // Resume whatever is queued on the device, then steer toward high energy
-    await fetch(`https://api.spotify.com/v1/me/player/play?device_id=${device.id}`, {
+    await spotifyFetch(`https://api.spotify.com/v1/me/player/play?device_id=${device.id}`, {
       method: "PUT",
       headers: { Authorization: `Bearer ${session.accessToken}`, "Content-Type": "application/json" },
       body: JSON.stringify({}),
@@ -308,30 +309,6 @@ export default function Workout() {
     setWorkoutState("warmup");
     ensureTrackEnergy(true);
   };
-
-  useEffect(() => {
-    if (!waitingForDevice || !session?.accessToken) return;
-    const poll = setInterval(async () => {
-      const res = await fetch("https://api.spotify.com/v1/me/player/devices", {
-        headers: { Authorization: `Bearer ${session.accessToken}` },
-      });
-      if (!res.ok) return;
-      const { devices } = await res.json();
-      const device = devices?.find((d: any) => d.is_active) ?? devices?.[0];
-      if (!device) return;
-      clearInterval(poll);
-      setWaitingForDevice(false);
-      setNoDevice(false);
-      await fetch(`https://api.spotify.com/v1/me/player/play?device_id=${device.id}`, {
-        method: "PUT",
-        headers: { Authorization: `Bearer ${session.accessToken}`, "Content-Type": "application/json" },
-        body: JSON.stringify({}),
-      });
-      setWorkoutState("warmup");
-      ensureTrackEnergyRef.current(true);
-    }, 3000);
-    return () => clearInterval(poll);
-  }, [waitingForDevice, session]);
 
   const handleStartSet = () => setWorkoutState("exercising");
 
@@ -392,7 +369,7 @@ export default function Workout() {
     const next = !isPlaying;
     setIsPlaying(next);
     lastCommandRef.current = Date.now();
-    await fetch(`https://api.spotify.com/v1/me/player/${next ? "play" : "pause"}`, {
+    await spotifyFetch(`https://api.spotify.com/v1/me/player/${next ? "play" : "pause"}`, {
       method: "PUT",
       headers: { Authorization: `Bearer ${session.accessToken}` },
     });
@@ -401,11 +378,10 @@ export default function Workout() {
   const skipTrack = async () => {
     if (!session?.accessToken) return;
     lastCommandRef.current = Date.now() - 1200;
-    await fetch("https://api.spotify.com/v1/me/player/next", {
+    await spotifyFetch("https://api.spotify.com/v1/me/player/next", {
       method: "POST",
       headers: { Authorization: `Bearer ${session.accessToken}` },
     });
-    // Wait for Spotify to load the new track, then steer BPM to match current state
     await new Promise((resolve) => setTimeout(resolve, 800));
     if (workoutState === "exercising" || workoutState === "warmup") {
       ensureTrackEnergyRef.current(true);
@@ -420,7 +396,7 @@ export default function Workout() {
   const prevTrack = async () => {
     if (!session?.accessToken) return;
     lastCommandRef.current = Date.now();
-    await fetch("https://api.spotify.com/v1/me/player/previous", {
+    await spotifyFetch("https://api.spotify.com/v1/me/player/previous", {
       method: "POST",
       headers: { Authorization: `Bearer ${session.accessToken}` },
     });
@@ -441,7 +417,7 @@ export default function Workout() {
     setSongPosition(positionMs);
     setSongProgress(Math.round(fraction * 100));
     if (!session?.accessToken || !songDuration) return;
-    await fetch(
+    await spotifyFetch(
       `https://api.spotify.com/v1/me/player/seek?position_ms=${positionMs}`,
       { method: "PUT", headers: { Authorization: `Bearer ${session.accessToken}` } }
     );
@@ -554,9 +530,7 @@ export default function Workout() {
         >
           {premiumRequired
             ? "LiftSync requires Spotify Premium"
-            : waitingForDevice
-            ? "Open Spotify on your device — workout will start automatically"
-            : "Open Spotify on your device to enable music"}
+            : "Open Spotify on your device, then tap Start Workout"}
         </div>
       )}
 
@@ -671,10 +645,9 @@ export default function Workout() {
         {workoutState === "idle" && (
           <button
             onClick={handleStart}
-            disabled={waitingForDevice}
-            className="w-full bg-amber-500 hover:bg-amber-400 disabled:opacity-60 text-black font-bold py-5 rounded-2xl text-xl touch-manipulation"
+            className="w-full bg-amber-500 hover:bg-amber-400 text-black font-bold py-5 rounded-2xl text-xl touch-manipulation"
           >
-            {waitingForDevice ? "Waiting for Spotify..." : "Start Workout 🔥"}
+            Start Workout 🔥
           </button>
         )}
         {workoutState === "warmup" && (
