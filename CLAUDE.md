@@ -38,7 +38,7 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=
 Spotify App Settings:
 
 Redirect URI: http://127.0.0.1:3000/api/auth/callback/spotify
-Scopes: user-read-playback-state user-modify-playback-state playlist-read-private streaming
+Scopes: user-read-private user-read-playback-state user-modify-playback-state playlist-read-private playlist-read-collaborative streaming
 
 Supabase Tables:
 sqlworkouts: id, user_id, name, created_at
@@ -63,23 +63,30 @@ App Logic:
 
 Spotify token auto-refreshes via NextAuth JWT callback
 Playlists fetched from Spotify, user selects one or more, saved to Supabase
-Tracks analyzed by BPM using Spotify audio features API (tempo field)
-Tracks split by median BPM into high/low buckets
+BPM detection: queue-based, no pre-loading. On state change, fetches currently-playing, looks up BPM, skips forward up to 5x until energy matches.
+BPM source: ReccoBeats API (no auth, https://api.reccobeats.com) — two-step: GET /v1/track?ids={spotifyId} → UUID, then GET /v1/track/{uuid}/audio-features → tempo. Falls back to Spotify GET /v1/audio-analysis/{id}.
+Fixed BPM cutoff: 120 BPM. ≥120 = HIGH (exercising/warmup), <120 = LOW (resting).
+Tracks not found in either API are skipped (not accepted as unknown energy).
+BPM results cached in-memory (bpmCacheRef: Map<string, number|null>) for the session.
+On track change: pre-warms BPM cache for next 6 tracks in queue (fire-and-forget).
 Workout screen has 4 states: idle → warmup → exercising → resting
 Background color changes per state: dark (idle), amber (warmup), red (exercising), blue (resting)
 Rest timer counts down, auto-switches back to exercising when done
 Song progress bar polls Spotify every second
+Manual skip (⏭) triggers BPM check after 800ms — steers to correct energy for current state
+State change (Done with Set → resting): 500ms delay before BPM check so Spotify settles first
+Spotify scopes: user-read-private user-read-playback-state user-modify-playback-state playlist-read-private playlist-read-collaborative streaming
+show_dialog: true on Spotify OAuth to always force consent screen (ensures latest scopes)
 
 
-Known Issues to Fix:
+Known Issues / Limitations:
 
-Spotify rate limit was hit during dev — audio features API returning 429. Wait 24hrs before testing BPM features
+ReccoBeats has poor coverage of obscure/slowed/lo-fi tracks — these get skipped automatically
+Spotify audio-analysis fallback may return 403 for apps in development quota mode
+user_playlists table in Supabase still needs to be created if not done yet (see table schema above)
 
 
 Upcoming Features (in priority order):
-
-
-Test and verify BPM splitting works correctly
 
 BPM variety scanner — warn user if playlist lacks variety, recommend adding more
 Adaptive mode — user manually taps to switch high/low BPM, app learns timing over sessions
