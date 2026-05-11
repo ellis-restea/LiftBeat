@@ -8,7 +8,8 @@ const handler = NextAuth({
       clientSecret: process.env.SPOTIFY_CLIENT_SECRET,
       authorization: {
         params: {
-          scope: "user-read-playback-state user-modify-playback-state playlist-read-private streaming",
+          scope: "user-read-playback-state user-modify-playback-state playlist-read-private playlist-read-collaborative streaming",
+          show_dialog: true,
         },
       },
     }),
