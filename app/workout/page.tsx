@@ -260,7 +260,7 @@ export default function Workout() {
             Promise.all(
               upcoming.map(async (t: any) => ({ name: t?.name, bpm: t?.id ? await getTrackBpm(t.id, t.name, t.artists?.[0]?.name) : null }))
             ).then((queueTracks) => {
-              console.log('[BPM] Queue analysis:', queueTracks.map((t) => ({ name: t.name, bpm: t.bpm, category: t.bpm != null ? (t.bpm >= HIGH_BPM_CUTOFF ? 'HIGH' : 'LOW') : 'UNKNOWN' })));
+              console.log('[BPM] Queue analysis:', queueTracks.map((t) => ({ name: t.name, stripped: t.name ? cleanTrackTitle(t.name) : null, bpm: t.bpm, category: t.bpm != null ? (t.bpm >= HIGH_BPM_CUTOFF ? 'HIGH' : 'LOW') : 'UNKNOWN' })));
             });
           })
           .catch(() => {});
