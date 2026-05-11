@@ -164,6 +164,7 @@ function WorkoutInner() {
           }
           const data = await res.json();
           const results: any[] = Array.isArray(data.search) ? data.search : [];
+          console.log(`[GetSongBPM] "${title}" → ${results.length} results, artists: [${results.map((r) => r.artist?.title).join(', ')}]`);
           if (artistLower) {
             const match = results.find((r) => r.artist?.title?.toLowerCase().includes(artistLower));
             if (!match) return null;
@@ -180,6 +181,7 @@ function WorkoutInner() {
       };
 
       // Step 2a: full track name
+      console.log(`[GetSongBPM] Step 2a — searching: "${trackName}" (artist filter: ${artistLower ?? 'none'})`);
       let result = await gsbSearch(trackName);
       if (result) {
         console.log(`[GetSongBPM] Found "${trackName}" by ${result.matchedArtist} → ${result.bpm} BPM`);
@@ -191,6 +193,7 @@ function WorkoutInner() {
       // Step 2b: strip remix/remaster suffix and retry
       const baseTitle = trackName.replace(/\s*[-–]\s*.+$/, '').replace(/\s*\(.*?\)\s*$/, '').trim();
       if (baseTitle && baseTitle !== trackName) {
+        console.log(`[GetSongBPM] Step 2b — base title: "${baseTitle}"`);
         result = await gsbSearch(baseTitle);
         if (result) {
           console.log(`[GetSongBPM] Found via base title: ${baseTitle} by ${result.matchedArtist} → ${result.bpm} BPM`);
@@ -198,6 +201,8 @@ function WorkoutInner() {
           bpmSourceCacheRef.current.set(spotifyId, "GetSongBPM");
           return result.bpm;
         }
+      } else {
+        console.log(`[GetSongBPM] Step 2b skipped — base title same as original or empty`);
       }
 
       console.log(`[GetSongBPM] NOT FOUND: ${trackName}`);
