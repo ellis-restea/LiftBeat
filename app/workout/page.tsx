@@ -62,7 +62,7 @@ export default function Workout() {
   const lastCommandRef = useRef<number>(0);
   const progressBarRef = useRef<HTMLDivElement>(null);
   const isDraggingRef = useRef(false);
-  const preloadedRef = useRef(false);
+  const lastTrackIdRef = useRef<string | null>(null);
 
   const currentExercise = exercises[currentExerciseIndex];
   const totalSets = exercises.reduce((acc, ex) => acc + ex.sets, 0);
@@ -106,40 +106,6 @@ export default function Workout() {
       });
   }, [session]);
 
-  // Silently pre-load the LiftSync playlist the moment the page opens:
-  // play (to queue it) then immediately pause so nothing audibly plays.
-  // On "Start Workout" we only need to resume, not re-queue.
-  useEffect(() => {
-    if (!session?.accessToken || playlistIds.length === 0 || preloadedRef.current) return;
-    const preload = async () => {
-      const devRes = await fetch("https://api.spotify.com/v1/me/player/devices", {
-        headers: { Authorization: `Bearer ${session.accessToken}` },
-      });
-      if (!devRes.ok) return;
-      const { devices } = await devRes.json();
-      const device = devices?.find((d: any) => d.is_active) ?? devices?.[0];
-      if (!device) return;
-
-      const playRes = await fetch(
-        `https://api.spotify.com/v1/me/player/play?device_id=${device.id}`,
-        {
-          method: "PUT",
-          headers: { Authorization: `Bearer ${session.accessToken}`, "Content-Type": "application/json" },
-          body: JSON.stringify({ context_uri: `spotify:playlist:${playlistIds[0]}` }),
-        }
-      );
-      if (!playRes.ok && playRes.status !== 204) return;
-
-      await fetch(`https://api.spotify.com/v1/me/player/pause?device_id=${device.id}`, {
-        method: "PUT",
-        headers: { Authorization: `Bearer ${session.accessToken}` },
-      });
-      lastCommandRef.current = Date.now();
-      preloadedRef.current = true;
-    };
-    preload();
-  }, [session, playlistIds]);
-
   useEffect(() => {
     if (!session?.accessToken || playlistIds.length === 0 || tracksLoaded) return;
 
@@ -180,13 +146,30 @@ export default function Workout() {
   }, [session, playlistIds, tracksLoaded]);
 
   const playTrack = useCallback(
-    async (high: boolean) => {
+    async (high: boolean, deviceId?: string) => {
       if (!session?.accessToken) return;
-      const bucket = high ? highBpmTracks : lowBpmTracks;
-      if (bucket.length === 0) return;
-      const track = bucket[Math.floor(Math.random() * bucket.length)];
+      // Primary bucket; fall back to the other if empty (e.g. all BPMs identical)
+      const primary = high ? highBpmTracks : lowBpmTracks;
+      const secondary = high ? lowBpmTracks : highBpmTracks;
+      const pool = primary.length > 0 ? primary : secondary;
+      if (pool.length === 0) return;
+
+      // Avoid repeating the last track when the pool has more than one option
+      let track: any;
+      if (lastTrackIdRef.current && pool.length > 1) {
+        const alts = pool.filter((t: any) => t.id !== lastTrackIdRef.current);
+        track = alts[Math.floor(Math.random() * alts.length)];
+      } else {
+        track = pool[Math.floor(Math.random() * pool.length)];
+      }
+      lastTrackIdRef.current = track.id;
+
       lastCommandRef.current = Date.now();
-      await fetch("https://api.spotify.com/v1/me/player/play", {
+      const url = deviceId
+        ? `https://api.spotify.com/v1/me/player/play?device_id=${deviceId}`
+        : "https://api.spotify.com/v1/me/player/play";
+
+      await fetch(url, {
         method: "PUT",
         headers: {
           Authorization: `Bearer ${session.accessToken}`,
@@ -257,67 +240,8 @@ export default function Workout() {
     return () => clearInterval(timerRef.current!);
   }, [workoutState, currentExercise]);
 
-  // Activate playback on a known device.
-  // If the playlist was pre-loaded (play→pause on mount), resume with no body.
-  // Otherwise send the full context_uri to queue and start it fresh.
-  // Falls back to a full-start if resume fails (e.g. device changed since preload).
-  const activatePlayback = useCallback(
-    async (deviceId: string) => {
-      if (!session?.accessToken) return;
-      lastCommandRef.current = Date.now();
-
-      const headers: HeadersInit = {
-        Authorization: `Bearer ${session.accessToken}`,
-        "Content-Type": "application/json",
-      };
-      const body = (!preloadedRef.current && playlistIds.length > 0)
-        ? JSON.stringify({ context_uri: `spotify:playlist:${playlistIds[0]}` })
-        : undefined;
-
-      const res = await fetch(
-        `https://api.spotify.com/v1/me/player/play?device_id=${deviceId}`,
-        { method: "PUT", headers, body }
-      );
-
-      if (res.ok || res.status === 204) {
-        setIsPlaying(true);
-        setNoDevice(false);
-        setWaitingForDevice(false);
-        setWorkoutState("warmup");
-      } else if (res.status === 403) {
-        setPremiumRequired(true);
-        setWaitingForDevice(false);
-      } else if (preloadedRef.current) {
-        // Resume failed (device may have changed since preload) — retry with full context
-        preloadedRef.current = false;
-        lastCommandRef.current = Date.now();
-        const retry = await fetch(
-          `https://api.spotify.com/v1/me/player/play?device_id=${deviceId}`,
-          {
-            method: "PUT",
-            headers,
-            body: JSON.stringify({ context_uri: `spotify:playlist:${playlistIds[0]}` }),
-          }
-        );
-        if (retry.ok || retry.status === 204) {
-          setIsPlaying(true);
-          setNoDevice(false);
-          setWaitingForDevice(false);
-          setWorkoutState("warmup");
-        } else {
-          setNoDevice(true);
-          setWaitingForDevice(true);
-        }
-      } else {
-        setNoDevice(true);
-        setWaitingForDevice(true);
-      }
-    },
-    [session, playlistIds]
-  );
-
   const handleStart = async () => {
-    if (!session?.accessToken) return;
+    if (!session?.accessToken || !tracksLoaded) return;
     const devicesRes = await fetch("https://api.spotify.com/v1/me/player/devices", {
       headers: { Authorization: `Bearer ${session.accessToken}` },
     });
@@ -326,10 +250,12 @@ export default function Workout() {
     const { devices } = await devicesRes.json();
     const device = devices?.find((d: any) => d.is_active) ?? devices?.[0];
     if (!device) { setNoDevice(true); setWaitingForDevice(true); return; }
-    await activatePlayback(device.id);
+    setNoDevice(false);
+    await playTrack(true, device.id);
+    setWorkoutState("warmup");
   };
 
-  // Poll every 3s for an active device when none was available on start
+  // Poll every 3s for an active device; use playTrackRef so the closure is always fresh
   useEffect(() => {
     if (!waitingForDevice || !session?.accessToken) return;
     const poll = setInterval(async () => {
@@ -341,10 +267,13 @@ export default function Workout() {
       const device = devices?.find((d: any) => d.is_active) ?? devices?.[0];
       if (!device) return;
       clearInterval(poll);
-      await activatePlayback(device.id);
+      setWaitingForDevice(false);
+      setNoDevice(false);
+      await playTrackRef.current(true, device.id);
+      setWorkoutState("warmup");
     }, 3000);
     return () => clearInterval(poll);
-  }, [waitingForDevice, session, activatePlayback]);
+  }, [waitingForDevice, session]);
 
   const handleStartSet = () => {
     setWorkoutState("exercising");
@@ -685,10 +614,10 @@ export default function Workout() {
         {workoutState === "idle" && (
           <button
             onClick={handleStart}
-            disabled={waitingForDevice}
+            disabled={waitingForDevice || !tracksLoaded}
             className="w-full bg-amber-500 hover:bg-amber-400 disabled:opacity-60 text-black font-bold py-5 rounded-2xl text-xl touch-manipulation"
           >
-            {waitingForDevice ? "Waiting for Spotify..." : "Start Workout 🔥"}
+            {waitingForDevice ? "Waiting for Spotify..." : !tracksLoaded ? "Loading music..." : "Start Workout 🔥"}
           </button>
         )}
         {workoutState === "warmup" && (
