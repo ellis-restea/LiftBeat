@@ -163,7 +163,7 @@ function WorkoutInner() {
             return null;
           }
           const data = await res.json();
-          const results: any[] = data.search ?? [];
+          const results: any[] = Array.isArray(data.search) ? data.search : [];
           if (artistLower) {
             const match = results.find((r) => r.artist?.title?.toLowerCase().includes(artistLower));
             if (!match) return null;
