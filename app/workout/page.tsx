@@ -1,6 +1,6 @@
 "use client";
 import { useSearchParams, useRouter } from "next/navigation";
-import { useSession, signOut } from "next-auth/react";
+import { useSession } from "next-auth/react";
 import { useEffect, useState, useCallback, useRef } from "react";
 import { supabase } from "@/lib/supabase";
 
@@ -54,7 +54,7 @@ export default function Workout() {
   const [noDevice, setNoDevice] = useState(false);
   const [waitingForDevice, setWaitingForDevice] = useState(false);
   const [premiumRequired, setPremiumRequired] = useState(false);
-  const [reAuthRequired, setReAuthRequired] = useState(false);
+  const [playlistError, setPlaylistError] = useState(false);
 
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   // Timestamp of the last playback command — poll is suppressed for 1.5s after
@@ -126,12 +126,7 @@ export default function Workout() {
         );
         if (!res.ok) {
           const errBody = await res.text();
-          console.error(`[Spotify] GET /playlists/${playlistId}/tracks → ${res.status}:`, errBody);
-          if (res.status === 403) {
-            setReAuthRequired(true);
-            setBpmLoading(false);
-            return;
-          }
+          console.warn(`[Spotify] Skipping playlist ${playlistId} — ${res.status}:`, errBody);
           continue;
         }
         const data = await res.json();
@@ -229,6 +224,12 @@ export default function Workout() {
       }
 
       console.log(`BPM lookup complete: found ${found}, skipped ${skipped}`);
+
+      if (uniqueTracks.length === 0) {
+        setPlaylistError(true);
+        setBpmLoading(false);
+        return;
+      }
 
       if (tracksWithBpm.length === 0) {
         setBpmLoading(false);
@@ -592,16 +593,15 @@ export default function Workout() {
       className={`min-h-screen ${bgColors[workoutState]} text-white flex flex-col items-center justify-between p-8 transition-colors`}
       style={{ transitionDuration: workoutState === "exercising" ? "300ms" : "700ms" }}
     >
-      {reAuthRequired && (
-        <div className="fixed top-0 left-0 right-0 z-50 bg-red-900/90 backdrop-blur-sm text-red-200 text-sm text-center py-2.5 px-4">
-          Spotify session expired — please{" "}
+      {playlistError && (
+        <div className="fixed top-0 left-0 right-0 z-50 bg-amber-900/90 backdrop-blur-sm text-amber-200 text-sm text-center py-3 px-4">
+          Spotify blocked access to your playlist — it may be a Discover Weekly or Daily Mix.{" "}
           <button
-            onClick={() => signOut()}
+            onClick={() => router.push("/playlist-select?mode=edit")}
             className="underline font-semibold"
           >
-            sign out and sign back in
+            Pick a different playlist
           </button>
-          {" "}to reload your playlists.
         </div>
       )}
 
