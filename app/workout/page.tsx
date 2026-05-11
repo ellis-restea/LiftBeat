@@ -152,22 +152,29 @@ function WorkoutInner() {
     const gsbKey = process.env.NEXT_PUBLIC_GETSONGBPM_KEY;
     if (gsbKey && trackName) {
       try {
-        const lookup = [artistName, trackName].filter(Boolean).map((s) => encodeURIComponent(s!).replace(/%20/g, '+')).join('+');
         const gsbRes = await fetch(
-          `https://api.getsong.co/search/?api_key=${gsbKey}&type=both&lookup=${lookup}`
+          `https://api.getsong.co/search/?api_key=${gsbKey}&type=song&lookup=${encodeURIComponent(trackName)}`
         );
         if (gsbRes.ok) {
           const gsbData = await gsbRes.json();
-          const tempoRaw = gsbData.search?.[0]?.tempo;
+          const results: any[] = gsbData.search ?? [];
+          // Prefer a result whose artist matches, fall back to first result
+          const artistLower = artistName?.toLowerCase();
+          const match = artistLower
+            ? (results.find((r) => r.artist?.title?.toLowerCase().includes(artistLower)) ?? results[0])
+            : results[0];
+          const tempoRaw = match?.tempo;
           const bpm = tempoRaw ? parseFloat(String(tempoRaw)) : null;
           if (bpm !== null && !isNaN(bpm)) {
-            console.log(`[GetSongBPM] Found ${trackName} → ${bpm} BPM`);
+            console.log(`[GetSongBPM] Found "${trackName}" (artist: ${match?.artist?.title ?? 'unknown'}) → ${bpm} BPM`);
             bpmCacheRef.current.set(spotifyId, bpm);
             bpmSourceCacheRef.current.set(spotifyId, "GetSongBPM");
             return bpm;
           } else {
             console.log(`[GetSongBPM] NOT FOUND: ${trackName}`);
           }
+        } else {
+          console.log(`[GetSongBPM] HTTP ${gsbRes.status} for "${trackName}"`);
         }
       } catch (err) {
         console.log(`[GetSongBPM] threw for "${trackName}":`, err);
