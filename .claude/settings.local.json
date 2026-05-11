@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git push *)",
+      "Bash(git commit *)",
+      "WebFetch(domain:reccobeats.com)",
+      "WebFetch(domain:api.reccobeats.com)",
+      "WebSearch",
+      "Bash(curl -s -w \"\\\\nHTTP Status: %{http_code}\\\\n\" \"https://api.reccobeats.com/v1/track/recommendation?q=test\")",
+      "Bash(curl -s -w \"\\\\nHTTP Status: %{http_code}\\\\n\" \"https://api.reccobeats.com/v1/track/recommendation?q=test&size=10\")",
+      "Bash(curl -s -w \"\\\\nHTTP Status: %{http_code}\\\\n\" \"https://api.reccobeats.com/v1/artist/search?q=test&size=10\")",
+      "Bash(curl -s -w \"\\\\nHTTP Status: %{http_code}\\\\n\" \"https://api.reccobeats.com/v1/artist/search?searchText=test&size=10\")",
+      "Bash(git *)"
+    ]
+  }
+}
