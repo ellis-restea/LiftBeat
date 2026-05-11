@@ -127,13 +127,18 @@ export default function Workout() {
       if (!track?.id) break;
 
       const bpm = await getTrackBpm(track.id);
-      console.log(`[BPM] "${track.name}" = ${bpm ?? "?"} BPM — want ${wantHigh ? "HIGH" : "LOW"} (≥${HIGH_BPM_CUTOFF})`);
+      const artist = track.artists?.[0]?.name;
+      console.log('[BPM] Current track:', track.name, 'by', artist, '| BPM:', bpm, '| Category:', bpm != null ? (bpm >= HIGH_BPM_CUTOFF ? 'HIGH' : 'LOW') : 'UNKNOWN');
       if (bpm === null) break; // BPM unknown — accept whatever is playing
 
       const isHigh = bpm >= HIGH_BPM_CUTOFF;
-      if (isHigh === wantHigh) break; // correct energy, done
+      if (isHigh === wantHigh) {
+        console.log('[BPM] Match found:', track.name, 'BPM:', bpm);
+        break; // correct energy, done
+      }
 
       // Wrong energy — skip to next track
+      console.log('[BPM] Skipping — needed:', wantHigh ? 'HIGH' : 'LOW', 'got:', isHigh ? 'HIGH' : 'LOW');
       lastCommandRef.current = Date.now() - 1200; // short cooldown so poll catches new track fast
       await fetch("https://api.spotify.com/v1/me/player/next", {
         method: "POST",
@@ -174,7 +179,11 @@ export default function Workout() {
               .filter(Boolean)
               .slice(0, 6);
             console.log(`[Queue] Track changed — pre-loading BPM for ${upcoming.length} tracks`);
-            upcoming.forEach((t: any) => { if (t?.id) getTrackBpm(t.id); });
+            Promise.all(
+              upcoming.map(async (t: any) => ({ name: t?.name, bpm: t?.id ? await getTrackBpm(t.id) : null }))
+            ).then((queueTracks) => {
+              console.log('[BPM] Queue analysis:', queueTracks.map((t) => ({ name: t.name, bpm: t.bpm, category: t.bpm != null ? (t.bpm >= HIGH_BPM_CUTOFF ? 'HIGH' : 'LOW') : 'UNKNOWN' })));
+            });
           })
           .catch(() => {});
       }
