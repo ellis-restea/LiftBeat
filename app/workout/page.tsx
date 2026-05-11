@@ -44,7 +44,7 @@ export default function Workout() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [highBpmTracks, setHighBpmTracks] = useState<any[]>([]);
   const [lowBpmTracks, setLowBpmTracks] = useState<any[]>([]);
-  const [tracksLoaded, setTracksLoaded] = useState(false);
+  const [bpmLoading, setBpmLoading] = useState(true);
   const [songProgress, setSongProgress] = useState(0);
   const [songPosition, setSongPosition] = useState(0);
   const [songDuration, setSongDuration] = useState(0);
@@ -63,6 +63,7 @@ export default function Workout() {
   const progressBarRef = useRef<HTMLDivElement>(null);
   const isDraggingRef = useRef(false);
   const lastTrackIdRef = useRef<string | null>(null);
+  const bpmFetchStartedRef = useRef(false);
 
   const currentExercise = exercises[currentExerciseIndex];
   const totalSets = exercises.reduce((acc, ex) => acc + ex.sets, 0);
@@ -102,12 +103,17 @@ export default function Workout() {
       .eq("user_id", session.user.name)
       .single()
       .then(({ data }) => {
-        if (data?.playlist_ids) setPlaylistIds(data.playlist_ids);
+        if (data?.playlist_ids?.length > 0) {
+          setPlaylistIds(data.playlist_ids);
+        } else {
+          setBpmLoading(false);
+        }
       });
   }, [session]);
 
   useEffect(() => {
-    if (!session?.accessToken || playlistIds.length === 0 || tracksLoaded) return;
+    if (!session?.accessToken || playlistIds.length === 0 || bpmFetchStartedRef.current) return;
+    bpmFetchStartedRef.current = true;
 
     const loadTracks = async () => {
       let allTracks: any[] = [];
@@ -139,14 +145,14 @@ export default function Workout() {
 
       const high = tracksWithBpm.filter((t) => t.bpm >= median);
       const low = tracksWithBpm.filter((t) => t.bpm < median);
-      console.log("High BPM tracks:", high.length, "Low BPM tracks:", low.length);
+      console.log(`BPM buckets ready — high: ${high.length}, low: ${low.length}`);
       setHighBpmTracks(high);
       setLowBpmTracks(low);
-      setTracksLoaded(true);
+      setBpmLoading(false);
     };
 
     loadTracks();
-  }, [session, playlistIds, tracksLoaded]);
+  }, [session, playlistIds]);
 
   const playTrack = useCallback(
     async (high: boolean, deviceId?: string) => {
@@ -246,7 +252,7 @@ export default function Workout() {
   }, [workoutState, currentExercise]);
 
   const handleStart = async () => {
-    if (!session?.accessToken || !tracksLoaded) return;
+    if (!session?.accessToken || bpmLoading) return;
     const devicesRes = await fetch("https://api.spotify.com/v1/me/player/devices", {
       headers: { Authorization: `Bearer ${session.accessToken}` },
     });
@@ -619,10 +625,10 @@ export default function Workout() {
         {workoutState === "idle" && (
           <button
             onClick={handleStart}
-            disabled={waitingForDevice || !tracksLoaded}
+            disabled={bpmLoading || waitingForDevice}
             className="w-full bg-amber-500 hover:bg-amber-400 disabled:opacity-60 text-black font-bold py-5 rounded-2xl text-xl touch-manipulation"
           >
-            {waitingForDevice ? "Waiting for Spotify..." : !tracksLoaded ? "Loading music..." : "Start Workout 🔥"}
+            {bpmLoading ? "Loading music..." : waitingForDevice ? "Waiting for Spotify..." : "Start Workout 🔥"}
           </button>
         )}
         {workoutState === "warmup" && (
