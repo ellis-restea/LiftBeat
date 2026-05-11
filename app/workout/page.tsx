@@ -128,24 +128,77 @@ export default function Workout() {
         allTracks = [...allTracks, ...tracks];
       }
 
-      const ids = allTracks.slice(0, 100).map((t) => t.id).join(",");
-      const featuresRes = await fetch(
-        `https://api.spotify.com/v1/audio-features?ids=${ids}`,
-        { headers: { Authorization: `Bearer ${session.accessToken}` } }
-      );
-      const featuresData = await featuresRes.json();
+      // Deduplicate and cap at 100 tracks
+      const seen = new Set<string>();
+      const uniqueTracks = allTracks.filter((t) => {
+        if (!t?.id || seen.has(t.id)) return false;
+        seen.add(t.id);
+        return true;
+      }).slice(0, 100);
 
-      const tracksWithBpm = allTracks.map((track, i) => ({
-        ...track,
-        bpm: featuresData.audio_features?.[i]?.tempo || 120,
-      }));
+      const BATCH_SIZE = 10;
+      const tracksWithBpm: any[] = [];
+      let found = 0;
+      let skipped = 0;
+
+      for (let i = 0; i < uniqueTracks.length; i += BATCH_SIZE) {
+        const batch = uniqueTracks.slice(i, i + BATCH_SIZE);
+
+        // Step 1: look up Spotify IDs in ReccoBeats to get their UUIDs
+        const spotifyIds = batch.map((t: any) => t.id).join(",");
+        const rbIdMap = new Map<string, string>();
+        try {
+          const lookupRes = await fetch(`https://api.reccobeats.com/v1/track?ids=${spotifyIds}`);
+          if (lookupRes.ok) {
+            const lookupData = await lookupRes.json();
+            for (const rbTrack of lookupData.content || []) {
+              // href is "https://open.spotify.com/track/{spotifyId}"
+              const spotifyId = rbTrack.href?.split("/").pop();
+              if (spotifyId && rbTrack.id) rbIdMap.set(spotifyId, rbTrack.id);
+            }
+          }
+        } catch {}
+
+        // Step 2: fetch audio features for each found track in parallel within the batch
+        const featPromises = batch.map(async (track: any) => {
+          const rbId = rbIdMap.get(track.id);
+          if (!rbId) { skipped++; return null; }
+          try {
+            const featRes = await fetch(`https://api.reccobeats.com/v1/track/${rbId}/audio-features`);
+            if (!featRes.ok) { skipped++; return null; }
+            const feat = await featRes.json();
+            if (typeof feat.tempo !== "number") { skipped++; return null; }
+            found++;
+            return { ...track, bpm: feat.tempo };
+          } catch {
+            skipped++;
+            return null;
+          }
+        });
+
+        const results = await Promise.all(featPromises);
+        for (const r of results) {
+          if (r) tracksWithBpm.push(r);
+        }
+
+        if (i + BATCH_SIZE < uniqueTracks.length) {
+          await new Promise((resolve) => setTimeout(resolve, 200));
+        }
+      }
+
+      console.log(`BPM lookup complete: found ${found}, skipped ${skipped}`);
+
+      if (tracksWithBpm.length === 0) {
+        setBpmLoading(false);
+        return;
+      }
 
       const bpms = tracksWithBpm.map((t) => t.bpm).sort((a: number, b: number) => a - b);
       const median = bpms[Math.floor(bpms.length / 2)];
 
       const high = tracksWithBpm.filter((t) => t.bpm >= median);
       const low = tracksWithBpm.filter((t) => t.bpm < median);
-      console.log(`BPM buckets ready — high: ${high.length}, low: ${low.length}`);
+      console.log(`BPM buckets ready: high ${high.length}, low ${low.length}`);
       setHighBpmTracks(high);
       setLowBpmTracks(low);
       setBpmLoading(false);
