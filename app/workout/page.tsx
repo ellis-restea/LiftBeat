@@ -150,9 +150,9 @@ function WorkoutInner() {
     const gsbKey = process.env.NEXT_PUBLIC_GETSONGBPM_KEY;
     if (gsbKey && trackName) {
       try {
-        const lookup = [artistName, trackName].filter(Boolean).map(encodeURIComponent).join('+');
+        const lookup = [artistName, trackName].filter(Boolean).map((s) => encodeURIComponent(s!)).join('+');
         const gsbRes = await fetch(
-          `https://api.getsongbpm.com/search/?api_key=${gsbKey}&type=both&lookup=${lookup}`
+          `https://api.getsong.co/search/?api_key=${gsbKey}&type=both&lookup=${lookup}`
         );
         if (gsbRes.ok) {
           const gsbData = await gsbRes.json();
