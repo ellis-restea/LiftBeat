@@ -683,6 +683,13 @@ function WorkoutInner() {
             />
           </div>
         </div>
+
+        <p className="text-center text-gray-600 text-xs">
+          BPM data provided by{" "}
+          <a href="https://getsongbpm.com" target="_blank" rel="noopener noreferrer" className="underline hover:text-gray-400 transition">
+            GetSongBPM
+          </a>
+        </p>
       </div>
     </div>
   );
