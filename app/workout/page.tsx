@@ -61,6 +61,8 @@ export default function Workout() {
   const bpmCacheRef = useRef<Map<string, number | null>>(new Map());
   const prevTrackIdRef = useRef<string | null>(null);
   const rateLimitUntilRef = useRef<number>(0);
+  const workoutStateRef = useRef<WorkoutState>("idle");
+  const fetchCurrentTrackRef = useRef<() => Promise<void>>(async () => {});
 
   const currentExercise = exercises[currentExerciseIndex];
   const totalSets = exercises.reduce((acc, ex) => acc + ex.sets, 0);
@@ -185,12 +187,13 @@ export default function Workout() {
       });
       await new Promise((resolve) => setTimeout(resolve, 700));
     }
-    lastCommandRef.current = Date.now() - 1200; // let poll update UI promptly
+    lastCommandRef.current = 0; // allow immediate UI refresh
+    fetchCurrentTrackRef.current();
   }, [session, getTrackBpm]);
 
-  // Keep a stable ref so timer/polling effects can always call the latest version.
   const ensureTrackEnergyRef = useRef(ensureTrackEnergy);
   useEffect(() => { ensureTrackEnergyRef.current = ensureTrackEnergy; }, [ensureTrackEnergy]);
+  useEffect(() => { workoutStateRef.current = workoutState; }, [workoutState]);
 
   const fetchCurrentTrack = useCallback(async () => {
     if (!session?.accessToken) return;
@@ -247,8 +250,24 @@ export default function Workout() {
     }
   }, [session, getTrackBpm]);
 
+  useEffect(() => { fetchCurrentTrackRef.current = fetchCurrentTrack; }, [fetchCurrentTrack]);
+
+  // Fetch once on load so the track display is populated immediately.
   useEffect(() => {
-    const interval = setInterval(fetchCurrentTrack, 5000);
+    if (session?.accessToken) fetchCurrentTrack();
+  }, [fetchCurrentTrack]);
+
+  // 30s background sync — catch natural track changes and steer BPM if workout is active.
+  useEffect(() => {
+    const interval = setInterval(async () => {
+      const prevId = prevTrackIdRef.current;
+      await fetchCurrentTrack();
+      if (prevTrackIdRef.current !== prevId) {
+        const state = workoutStateRef.current;
+        if (state === "exercising" || state === "warmup") ensureTrackEnergyRef.current(true);
+        else if (state === "resting") ensureTrackEnergyRef.current(false);
+      }
+    }, 30000);
     return () => clearInterval(interval);
   }, [fetchCurrentTrack]);
 
@@ -392,18 +411,22 @@ export default function Workout() {
       ensureTrackEnergyRef.current(true);
     } else if (workoutState === "resting") {
       ensureTrackEnergyRef.current(false);
+    } else {
+      lastCommandRef.current = 0;
+      fetchCurrentTrack();
     }
   };
 
   const prevTrack = async () => {
     if (!session?.accessToken) return;
-    lastCommandRef.current = Date.now() - 1200;
+    lastCommandRef.current = Date.now();
     await fetch("https://api.spotify.com/v1/me/player/previous", {
       method: "POST",
       headers: { Authorization: `Bearer ${session.accessToken}` },
     });
-    setTimeout(fetchCurrentTrack, 400);
-    setTimeout(fetchCurrentTrack, 800);
+    await new Promise((r) => setTimeout(r, 800));
+    lastCommandRef.current = 0;
+    fetchCurrentTrack();
   };
 
   const getProgressFromX = (clientX: number): number => {
