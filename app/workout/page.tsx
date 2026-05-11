@@ -61,6 +61,7 @@ function WorkoutInner() {
   const progressBarRef = useRef<HTMLDivElement>(null);
   const isDraggingRef = useRef(false);
   const bpmCacheRef = useRef<Map<string, number | null>>(new Map());
+  const bpmSourceCacheRef = useRef<Map<string, string>>(new Map());
   const prevTrackIdRef = useRef<string | null>(null);
   // Timestamp until which all Spotify API calls are blocked (rate limit)
   const rateLimitUntilRef = useRef<number>(0);
@@ -135,6 +136,7 @@ function WorkoutInner() {
             console.log(`[BPM] ReccoBeats audio-features for rbId ${rbId} → tempo: ${feat.tempo ?? 'MISSING'}`);
             if (typeof feat.tempo === "number") {
               bpmCacheRef.current.set(spotifyId, feat.tempo);
+              bpmSourceCacheRef.current.set(spotifyId, "ReccoBeats");
               return feat.tempo;
             }
           }
@@ -161,6 +163,7 @@ function WorkoutInner() {
           if (bpm !== null && !isNaN(bpm)) {
             console.log(`[GetSongBPM] Found ${trackName} → ${bpm} BPM`);
             bpmCacheRef.current.set(spotifyId, bpm);
+            bpmSourceCacheRef.current.set(spotifyId, "GetSongBPM");
             return bpm;
           } else {
             console.log(`[GetSongBPM] NOT FOUND: ${trackName}`);
@@ -172,6 +175,7 @@ function WorkoutInner() {
     }
 
     bpmCacheRef.current.set(spotifyId, null);
+    bpmSourceCacheRef.current.set(spotifyId, "unknown");
     return null;
   }, [spotifyFetch]);
 
@@ -252,12 +256,17 @@ function WorkoutInner() {
               .slice(0, 6);
             console.log(`[Queue] Track changed — pre-loading BPM for ${upcoming.length} tracks`);
             Promise.all(
-              upcoming.map(async (t: any) => ({ name: t?.name, bpm: t?.id ? await getTrackBpm(t.id, t.name, t.artists?.[0]?.name) : null }))
+              upcoming.map(async (t: any) => {
+                const bpm = t?.id ? await getTrackBpm(t.id, t.name, t.artists?.[0]?.name) : null;
+                const api = t?.id ? (bpmSourceCacheRef.current.get(t.id) ?? 'unknown') : 'unknown';
+                return { name: t?.name, bpm, api };
+              })
             ).then((queueTracks) => {
               console.log('[BPM] Queue analysis:', queueTracks.map((t) => ({
                 name: t.name,
                 bpm: t.bpm,
                 category: t.bpm != null ? (t.bpm >= HIGH_BPM_CUTOFF ? 'HIGH' : 'LOW') : 'UNKNOWN',
+                api: t.api,
               })));
             });
           })
