@@ -334,12 +334,12 @@ export default function Workout() {
           setCurrentExerciseIndex(pairedAIdx);
           setCurrentSet(currentSet + 1);
           setWorkoutState("resting");
-          ensureTrackEnergy(false);
+          setTimeout(() => ensureTrackEnergyRef.current(false), 500);
         } else if (currentExerciseIndex + 1 < exercises.length) {
           setCurrentExerciseIndex(currentExerciseIndex + 1);
           setCurrentSet(1);
           setWorkoutState("resting");
-          ensureTrackEnergy(false);
+          setTimeout(() => ensureTrackEnergyRef.current(false), 500);
         } else {
           setWorkoutState("done");
         }
@@ -350,12 +350,12 @@ export default function Workout() {
     if (currentSet < currentExercise.sets) {
       setCurrentSet(currentSet + 1);
       setWorkoutState("resting");
-      ensureTrackEnergy(false);
+      setTimeout(() => ensureTrackEnergyRef.current(false), 500);
     } else if (currentExerciseIndex < exercises.length - 1) {
       setCurrentExerciseIndex(currentExerciseIndex + 1);
       setCurrentSet(1);
       setWorkoutState("resting");
-      ensureTrackEnergy(false);
+      setTimeout(() => ensureTrackEnergyRef.current(false), 500);
     } else {
       setWorkoutState("done");
     }
@@ -379,8 +379,13 @@ export default function Workout() {
       method: "POST",
       headers: { Authorization: `Bearer ${session.accessToken}` },
     });
-    setTimeout(fetchCurrentTrack, 400);
-    setTimeout(fetchCurrentTrack, 800);
+    // Wait for Spotify to load the new track, then steer BPM to match current state
+    await new Promise((resolve) => setTimeout(resolve, 800));
+    if (workoutState === "exercising" || workoutState === "warmup") {
+      ensureTrackEnergyRef.current(true);
+    } else if (workoutState === "resting") {
+      ensureTrackEnergyRef.current(false);
+    }
   };
 
   const prevTrack = async () => {
