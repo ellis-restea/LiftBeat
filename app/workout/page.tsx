@@ -146,6 +146,9 @@ export default function Workout() {
 
           if (res.ok) {
             const data = await res.json();
+            console.log(`[Spotify] tracks.total:`, data.tracks?.total);
+            console.log(`[Spotify] tracks.items length:`, data.tracks?.items?.length);
+            console.log(`[Spotify] first item raw:`, JSON.stringify(data.tracks?.items?.[0]).slice(0, 300));
             const tracks = data.tracks?.items?.map((item: any) => item.track).filter(Boolean) || [];
             console.log(`[Spotify] Got ${tracks.length} tracks from base endpoint`);
             allTracks = [...allTracks, ...tracks];
