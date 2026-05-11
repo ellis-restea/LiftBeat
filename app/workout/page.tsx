@@ -30,8 +30,13 @@ const HIGH_BPM_CUTOFF = 120;
 
 function cleanTrackTitle(title: string): string {
   return title
-    .replace(/\s*[\(\[](?:slowed\s*[+&]?\s*reverb|reverb\s*[+&]?\s*slowed|sped[\s+]*up\s*[+&]?\s*reverb|reverb\s*[+&]?\s*sped[\s+]*up|slowed|sped[\s+]*up|reverb|nightcore|pitched[\s+]*up|bass[\s+]*boost(?:ed)?|lo[\s\-]*fi|lofi|remix|edit|version|extended|acoustic|instrumental)[^\)\]]*[\)\]]/gi, '')
+    // "(Slowed)", "[Slowed + Reverb]", "(Nightcore)", etc.
+    .replace(/\s*[\(\[](?:slowed|sped[\s+]*up|reverb|nightcore|pitched[\s+]*up|bass[\s+]*boost(?:ed)?|lo[\s\-]*fi|lofi|remix|edit|version|extended|acoustic|instrumental)[^\)\]]*[\)\]]/gi, '')
+    // "Song - Slowed", "Song - Sped Up", "Song - Slowed + Reverb", etc.
+    .replace(/\s+-\s+(?:slowed|sped[\s+]*up|reverb|nightcore|pitched[\s+]*up|bass[\s+]*boost(?:ed)?|lo[\s\-]*fi|lofi).*/gi, '')
+    // "(feat. Artist)", "[ft. Artist]"
     .replace(/\s*[\(\[](?:feat\.|ft\.|featuring)\s[^\)\]]*[\)\]]/gi, '')
+    // "Song feat. Artist", "Song ft. Artist"
     .replace(/\s+(?:feat\.|ft\.|featuring)\s+.*/gi, '')
     .trim();
 }
@@ -133,29 +138,29 @@ export default function Workout() {
       console.log(`[BPM] ReccoBeats threw for ${spotifyId}:`, err);
     }
 
-    // Step 2: If track name provided, clean title and retry via Spotify search for canonical ID
+    // Step 2: If the title has strippable modifiers, search Spotify for the canonical track
     if (trackName && session?.accessToken) {
       const cleaned = cleanTrackTitle(trackName);
       if (cleaned !== trackName) {
         console.log(`[BPM] Cleaned title: "${cleaned}" (was: "${trackName}")`);
-      }
-      try {
-        const q = encodeURIComponent(`${cleaned}${artistName ? ` ${artistName}` : ""}`);
-        const searchRes = await fetch(
-          `https://api.spotify.com/v1/search?q=${q}&type=track&limit=1`,
-          { headers: { Authorization: `Bearer ${session.accessToken}` } }
-        );
-        if (searchRes.ok) {
-          const searchData = await searchRes.json();
-          const canonicalId = searchData.tracks?.items?.[0]?.id;
-          if (canonicalId && canonicalId !== spotifyId) {
-            console.log(`[BPM] Retrying ReccoBeats with canonical ID ${canonicalId} for "${cleaned}"`);
-            const bpm = await tryReccoBeats(canonicalId);
-            if (bpm !== null) { bpmCacheRef.current.set(spotifyId, bpm); return bpm; }
+        try {
+          const q = encodeURIComponent(`${cleaned}${artistName ? ` ${artistName}` : ""}`);
+          const searchRes = await fetch(
+            `https://api.spotify.com/v1/search?q=${q}&type=track&limit=1`,
+            { headers: { Authorization: `Bearer ${session.accessToken}` } }
+          );
+          if (searchRes.ok) {
+            const searchData = await searchRes.json();
+            const canonicalId = searchData.tracks?.items?.[0]?.id;
+            if (canonicalId && canonicalId !== spotifyId) {
+              console.log(`[BPM] Retrying ReccoBeats with canonical ID ${canonicalId} for "${cleaned}"`);
+              const bpm = await tryReccoBeats(canonicalId);
+              if (bpm !== null) { bpmCacheRef.current.set(spotifyId, bpm); return bpm; }
+            }
           }
+        } catch (err) {
+          console.log(`[BPM] Spotify search threw for "${trackName}":`, err);
         }
-      } catch (err) {
-        console.log(`[BPM] Spotify search threw for "${trackName}":`, err);
       }
     }
 
