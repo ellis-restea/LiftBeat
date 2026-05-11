@@ -88,31 +88,60 @@ export default function Workout() {
       });
   }, [workoutId]);
 
-  // Look up BPM for a Spotify track ID via ReccoBeats, with in-memory caching.
+  // Look up BPM for a Spotify track ID. Tries ReccoBeats first, falls back to
+  // Spotify audio-analysis. Results cached in-memory to avoid redundant requests.
   const getTrackBpm = useCallback(async (spotifyId: string): Promise<number | null> => {
     if (bpmCacheRef.current.has(spotifyId)) {
       return bpmCacheRef.current.get(spotifyId) ?? null;
     }
-    try {
-      // Step 1: resolve Spotify ID → ReccoBeats UUID
-      const lookupRes = await fetch(`https://api.reccobeats.com/v1/track?ids=${spotifyId}`);
-      if (!lookupRes.ok) { bpmCacheRef.current.set(spotifyId, null); return null; }
-      const lookupData = await lookupRes.json();
-      const rbId = lookupData.content?.[0]?.id;
-      if (!rbId) { bpmCacheRef.current.set(spotifyId, null); return null; }
 
-      // Step 2: get audio features (tempo)
-      const featRes = await fetch(`https://api.reccobeats.com/v1/track/${rbId}/audio-features`);
-      if (!featRes.ok) { bpmCacheRef.current.set(spotifyId, null); return null; }
-      const feat = await featRes.json();
-      const bpm = typeof feat.tempo === "number" ? feat.tempo : null;
-      bpmCacheRef.current.set(spotifyId, bpm);
-      return bpm;
-    } catch {
-      bpmCacheRef.current.set(spotifyId, null);
-      return null;
+    // Step 1: ReccoBeats (no auth required)
+    try {
+      const lookupRes = await fetch(`https://api.reccobeats.com/v1/track?ids=${spotifyId}`);
+      if (lookupRes.ok) {
+        const lookupData = await lookupRes.json();
+        const rbId = lookupData.content?.[0]?.id;
+        console.log(`[BPM] ReccoBeats lookup for ${spotifyId} → rbId: ${rbId ?? 'NOT FOUND'} (content length: ${lookupData.content?.length ?? 0})`);
+        if (rbId) {
+          const featRes = await fetch(`https://api.reccobeats.com/v1/track/${rbId}/audio-features`);
+          if (featRes.ok) {
+            const feat = await featRes.json();
+            console.log(`[BPM] ReccoBeats audio-features for rbId ${rbId} → tempo: ${feat.tempo ?? 'MISSING'}`);
+            if (typeof feat.tempo === "number") {
+              bpmCacheRef.current.set(spotifyId, feat.tempo);
+              return feat.tempo;
+            }
+          }
+        }
+      } else {
+        console.log(`[BPM] ReccoBeats lookup HTTP ${lookupRes.status} for ${spotifyId}`);
+      }
+    } catch (err) {
+      console.log(`[BPM] ReccoBeats threw for ${spotifyId}:`, err);
     }
-  }, []);
+
+    // Step 2: Spotify audio-analysis fallback
+    if (session?.accessToken) {
+      try {
+        const analysisRes = await fetch(`https://api.spotify.com/v1/audio-analysis/${spotifyId}`, {
+          headers: { Authorization: `Bearer ${session.accessToken}` },
+        });
+        console.log(`[BPM] Spotify audio-analysis for ${spotifyId} → HTTP ${analysisRes.status}`);
+        if (analysisRes.ok) {
+          const analysis = await analysisRes.json();
+          const bpm = typeof analysis.track?.tempo === "number" ? analysis.track.tempo : null;
+          console.log(`[BPM] Spotify audio-analysis tempo: ${bpm ?? 'MISSING'}`);
+          bpmCacheRef.current.set(spotifyId, bpm);
+          return bpm;
+        }
+      } catch (err) {
+        console.log(`[BPM] Spotify audio-analysis threw for ${spotifyId}:`, err);
+      }
+    }
+
+    bpmCacheRef.current.set(spotifyId, null);
+    return null;
+  }, [session]);
 
   // Skip tracks until we land on one with the desired energy level (or give up after 5 tries).
   const ensureTrackEnergy = useCallback(async (wantHigh: boolean) => {
@@ -129,7 +158,17 @@ export default function Workout() {
       const bpm = await getTrackBpm(track.id);
       const artist = track.artists?.[0]?.name;
       console.log('[BPM] Current track:', track.name, 'by', artist, '| BPM:', bpm, '| Category:', bpm != null ? (bpm >= HIGH_BPM_CUTOFF ? 'HIGH' : 'LOW') : 'UNKNOWN');
-      if (bpm === null) break; // BPM unknown — accept whatever is playing
+      if (bpm === null) {
+        // BPM unknown after both APIs — skip rather than play wrong-energy music
+        console.log(`[BPM] BPM unknown for "${track.name}" — skipping`);
+        lastCommandRef.current = Date.now() - 1200;
+        await fetch("https://api.spotify.com/v1/me/player/next", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${session.accessToken}` },
+        });
+        await new Promise((resolve) => setTimeout(resolve, 700));
+        continue;
+      }
 
       const isHigh = bpm >= HIGH_BPM_CUTOFF;
       if (isHigh === wantHigh) {
