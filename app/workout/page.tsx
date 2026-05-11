@@ -117,18 +117,50 @@ export default function Workout() {
     bpmFetchStartedRef.current = true;
 
     const loadTracks = async () => {
+      // Validate token before anything else
+      const meRes = await fetch("https://api.spotify.com/v1/me", {
+        headers: { Authorization: `Bearer ${session.accessToken}` },
+      });
+      console.log(`[Spotify] Token check — /me status: ${meRes.status}`);
+      if (meRes.ok) {
+        const me = await meRes.json();
+        console.log(`[Spotify] Logged in as: ${me.display_name} (${me.id}), country: ${me.country}`);
+      }
+
       let allTracks: any[] = [];
 
       for (const playlistId of playlistIds) {
-        const res = await fetch(
+        const headers = { Authorization: `Bearer ${session.accessToken}` };
+
+        // Try /tracks sub-resource first
+        let res = await fetch(
           `https://api.spotify.com/v1/playlists/${playlistId}/tracks?limit=50`,
-          { headers: { Authorization: `Bearer ${session.accessToken}` } }
+          { headers }
         );
+
+        if (res.status === 403) {
+          console.warn(`[Spotify] /tracks 403 for ${playlistId} — trying base playlist endpoint`);
+          // Fallback: pull tracks from the playlist object itself (includes first 100 inline)
+          res = await fetch(`https://api.spotify.com/v1/playlists/${playlistId}`, { headers });
+          console.log(`[Spotify] /playlists/${playlistId} status: ${res.status}`);
+
+          if (res.ok) {
+            const data = await res.json();
+            const tracks = data.tracks?.items?.map((item: any) => item.track).filter(Boolean) || [];
+            console.log(`[Spotify] Got ${tracks.length} tracks from base endpoint`);
+            allTracks = [...allTracks, ...tracks];
+          } else {
+            console.error(`[Spotify] Base endpoint also failed:`, await res.text());
+          }
+          continue;
+        }
+
         if (!res.ok) {
           const errBody = await res.text();
           console.warn(`[Spotify] Skipping playlist ${playlistId} — ${res.status}:`, errBody);
           continue;
         }
+
         const data = await res.json();
         const tracks = data.items?.map((item: any) => item.track).filter(Boolean) || [];
         allTracks = [...allTracks, ...tracks];
