@@ -137,8 +137,11 @@ export default function Workout() {
       const bpms = tracksWithBpm.map((t) => t.bpm).sort((a: number, b: number) => a - b);
       const median = bpms[Math.floor(bpms.length / 2)];
 
-      setHighBpmTracks(tracksWithBpm.filter((t) => t.bpm >= median));
-      setLowBpmTracks(tracksWithBpm.filter((t) => t.bpm < median));
+      const high = tracksWithBpm.filter((t) => t.bpm >= median);
+      const low = tracksWithBpm.filter((t) => t.bpm < median);
+      console.log("High BPM tracks:", high.length, "Low BPM tracks:", low.length);
+      setHighBpmTracks(high);
+      setLowBpmTracks(low);
       setTracksLoaded(true);
     };
 
@@ -151,6 +154,7 @@ export default function Workout() {
       // Primary bucket; fall back to the other if empty (e.g. all BPMs identical)
       const primary = high ? highBpmTracks : lowBpmTracks;
       const secondary = high ? lowBpmTracks : highBpmTracks;
+      if (primary.length === 0) console.log("Bucket empty, falling back");
       const pool = primary.length > 0 ? primary : secondary;
       if (pool.length === 0) return;
 
@@ -163,6 +167,7 @@ export default function Workout() {
         track = pool[Math.floor(Math.random() * pool.length)];
       }
       lastTrackIdRef.current = track.id;
+      console.log("Playing from bucket:", high ? "high" : "low", "bucket size:", pool.length, "track:", track?.name);
 
       lastCommandRef.current = Date.now();
       const url = deviceId

@@ -70,29 +70,17 @@ Background color changes per state: dark (idle), amber (warmup), red (exercising
 Rest timer counts down, auto-switches back to exercising when done
 Song progress bar polls Spotify every second
 
-Superset Logic (needs to be fixed):
-
-When exercise B is supersetted with exercise A, there is NO rest between them
-Flow: Exercise A → immediately Exercise B → ONE rest timer → repeat
-Rest time is taken from Exercise A (first in the pair)
-superset_with field in exercises table stores the order_index of the paired exercise
 
 Known Issues to Fix:
 
 Spotify rate limit was hit during dev — audio features API returning 429. Wait 24hrs before testing BPM features
-Superset logic incomplete — needs fix as described above
-Saved workout flow — tapping a workout on dashboard should go straight to workout screen, not playlist select
-Playlists currently passed via URL params — needs to be saved to Supabase user_playlists table instead
-Token occasionally goes stale — sign out and sign back in to refresh
+
 
 Upcoming Features (in priority order):
 
-Add user_playlists table to Supabase and save playlists on onboarding
-Fix superset rest logic
-Load playlists from Supabase in workout screen instead of URL
-Fix saved workout → direct to workout screen flow
+
 Test and verify BPM splitting works correctly
-Edit playlists button on dashboard (pencil icon, small, corner of screen)
+
 BPM variety scanner — warn user if playlist lacks variety, recommend adding more
 Adaptive mode — user manually taps to switch high/low BPM, app learns timing over sessions
 Subscription payment (Stripe) — add after gaining traction, not at launch
