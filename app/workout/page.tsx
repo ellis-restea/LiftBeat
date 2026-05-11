@@ -1,7 +1,7 @@
 "use client";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useCallback, useRef, Suspense } from "react";
 import { supabase } from "@/lib/supabase";
 
 interface Exercise {
@@ -29,6 +29,10 @@ function formatMs(ms: number) {
 const HIGH_BPM_CUTOFF = 120;
 
 export default function Workout() {
+  return <Suspense><WorkoutInner /></Suspense>;
+}
+
+function WorkoutInner() {
   const searchParams = useSearchParams();
   const { data: session } = useSession();
   const router = useRouter();
