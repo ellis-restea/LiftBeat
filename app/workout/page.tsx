@@ -28,18 +28,6 @@ function formatMs(ms: number) {
 
 const HIGH_BPM_CUTOFF = 120;
 
-function cleanTrackTitle(title: string): string {
-  return title
-    // "(Slowed)", "[Slowed + Reverb]", "(Nightcore)", etc.
-    .replace(/\s*[\(\[](?:slowed|sped[\s+]*up|reverb|nightcore|pitched[\s+]*up|bass[\s+]*boost(?:ed)?|lo[\s\-]*fi|lofi|remix|edit|version|extended|acoustic|instrumental)[^\)\]]*[\)\]]/gi, '')
-    // "Song - Slowed", "Song - Sped Up", "Song - Slowed + Reverb", etc.
-    .replace(/\s+-\s+(?:slowed|sped[\s+]*up|reverb|nightcore|pitched[\s+]*up|bass[\s+]*boost(?:ed)?|lo[\s\-]*fi|lofi).*/gi, '')
-    // "(feat. Artist)", "[ft. Artist]"
-    .replace(/\s*[\(\[](?:feat\.|ft\.|featuring)\s[^\)\]]*[\)\]]/gi, '')
-    // "Song feat. Artist", "Song ft. Artist"
-    .replace(/\s+(?:feat\.|ft\.|featuring)\s+.*/gi, '')
-    .trim();
-}
 
 export default function Workout() {
   const searchParams = useSearchParams();
@@ -70,10 +58,9 @@ export default function Workout() {
   const lastCommandRef = useRef<number>(0);
   const progressBarRef = useRef<HTMLDivElement>(null);
   const isDraggingRef = useRef(false);
-  // BPM cache: spotifyTrackId → BPM (or null if not found in ReccoBeats)
   const bpmCacheRef = useRef<Map<string, number | null>>(new Map());
-  // Last seen track ID — used to detect when a new song starts
   const prevTrackIdRef = useRef<string | null>(null);
+  const rateLimitUntilRef = useRef<number>(0);
 
   const currentExercise = exercises[currentExerciseIndex];
   const totalSets = exercises.reduce((acc, ex) => acc + ex.sets, 0);
@@ -101,70 +88,39 @@ export default function Workout() {
       });
   }, [workoutId]);
 
-  // Look up BPM for a Spotify track ID. Tries ReccoBeats first; if not found and
-  // track name is provided, retries with the cleaned/canonical title via Spotify search.
-  // Falls back to Spotify audio-analysis. Results cached in-memory.
-  const getTrackBpm = useCallback(async (
-    spotifyId: string,
-    trackName?: string,
-    artistName?: string,
-  ): Promise<number | null> => {
+  // Look up BPM for a Spotify track ID via ReccoBeats, with Spotify audio-analysis
+  // fallback. Results cached in-memory to avoid redundant requests.
+  const getTrackBpm = useCallback(async (spotifyId: string): Promise<number | null> => {
     if (bpmCacheRef.current.has(spotifyId)) {
       return bpmCacheRef.current.get(spotifyId) ?? null;
     }
 
-    const tryReccoBeats = async (id: string): Promise<number | null> => {
-      const lookupRes = await fetch(`https://api.reccobeats.com/v1/track?ids=${id}`);
-      if (!lookupRes.ok) {
-        console.log(`[BPM] ReccoBeats lookup HTTP ${lookupRes.status} for ${id}`);
-        return null;
-      }
-      const lookupData = await lookupRes.json();
-      const rbId = lookupData.content?.[0]?.id;
-      console.log(`[BPM] ReccoBeats lookup for ${id} → rbId: ${rbId ?? 'NOT FOUND'} (content length: ${lookupData.content?.length ?? 0})`);
-      if (!rbId) return null;
-      const featRes = await fetch(`https://api.reccobeats.com/v1/track/${rbId}/audio-features`);
-      if (!featRes.ok) return null;
-      const feat = await featRes.json();
-      console.log(`[BPM] ReccoBeats audio-features for rbId ${rbId} → tempo: ${feat.tempo ?? 'MISSING'}`);
-      return typeof feat.tempo === "number" ? feat.tempo : null;
-    };
-
-    // Step 1: ReccoBeats by original Spotify ID
+    // Step 1: ReccoBeats (no auth required)
     try {
-      const bpm = await tryReccoBeats(spotifyId);
-      if (bpm !== null) { bpmCacheRef.current.set(spotifyId, bpm); return bpm; }
+      const lookupRes = await fetch(`https://api.reccobeats.com/v1/track?ids=${spotifyId}`);
+      if (lookupRes.ok) {
+        const lookupData = await lookupRes.json();
+        const rbId = lookupData.content?.[0]?.id;
+        console.log(`[BPM] ReccoBeats lookup for ${spotifyId} → rbId: ${rbId ?? 'NOT FOUND'} (content length: ${lookupData.content?.length ?? 0})`);
+        if (rbId) {
+          const featRes = await fetch(`https://api.reccobeats.com/v1/track/${rbId}/audio-features`);
+          if (featRes.ok) {
+            const feat = await featRes.json();
+            console.log(`[BPM] ReccoBeats audio-features for rbId ${rbId} → tempo: ${feat.tempo ?? 'MISSING'}`);
+            if (typeof feat.tempo === "number") {
+              bpmCacheRef.current.set(spotifyId, feat.tempo);
+              return feat.tempo;
+            }
+          }
+        }
+      } else {
+        console.log(`[BPM] ReccoBeats lookup HTTP ${lookupRes.status} for ${spotifyId}`);
+      }
     } catch (err) {
       console.log(`[BPM] ReccoBeats threw for ${spotifyId}:`, err);
     }
 
-    // Step 2: If the title has strippable modifiers, search Spotify for the canonical track
-    if (trackName && session?.accessToken) {
-      const cleaned = cleanTrackTitle(trackName);
-      if (cleaned !== trackName) {
-        console.log(`[BPM] Cleaned title: "${cleaned}" (was: "${trackName}")`);
-        try {
-          const q = encodeURIComponent(`${cleaned}${artistName ? ` ${artistName}` : ""}`);
-          const searchRes = await fetch(
-            `https://api.spotify.com/v1/search?q=${q}&type=track&limit=1`,
-            { headers: { Authorization: `Bearer ${session.accessToken}` } }
-          );
-          if (searchRes.ok) {
-            const searchData = await searchRes.json();
-            const canonicalId = searchData.tracks?.items?.[0]?.id;
-            if (canonicalId && canonicalId !== spotifyId) {
-              console.log(`[BPM] Retrying ReccoBeats with canonical ID ${canonicalId} for "${cleaned}"`);
-              const bpm = await tryReccoBeats(canonicalId);
-              if (bpm !== null) { bpmCacheRef.current.set(spotifyId, bpm); return bpm; }
-            }
-          }
-        } catch (err) {
-          console.log(`[BPM] Spotify search threw for "${trackName}":`, err);
-        }
-      }
-    }
-
-    // Step 3: Spotify audio-analysis fallback
+    // Step 2: Spotify audio-analysis fallback
     if (session?.accessToken) {
       try {
         const analysisRes = await fetch(`https://api.spotify.com/v1/audio-analysis/${spotifyId}`, {
@@ -200,7 +156,7 @@ export default function Workout() {
       if (!track?.id) break;
 
       const artist = track.artists?.[0]?.name;
-      const bpm = await getTrackBpm(track.id, track.name, artist);
+      const bpm = await getTrackBpm(track.id);
       console.log('[BPM] Current track:', track.name, 'by', artist, '| BPM:', bpm, '| Category:', bpm != null ? (bpm >= HIGH_BPM_CUTOFF ? 'HIGH' : 'LOW') : 'UNKNOWN');
       if (bpm === null) {
         // BPM unknown after both APIs — skip rather than play wrong-energy music
@@ -240,10 +196,17 @@ export default function Workout() {
     if (!session?.accessToken) return;
     if (Date.now() - lastCommandRef.current < 1500) return;
     if (isDraggingRef.current) return;
+    if (Date.now() < rateLimitUntilRef.current) return;
 
     const res = await fetch("https://api.spotify.com/v1/me/player/currently-playing", {
       headers: { Authorization: `Bearer ${session.accessToken}` },
     });
+    if (res.status === 429) {
+      const retryAfter = parseInt(res.headers.get("retry-after") ?? "10", 10);
+      console.log(`[Poll] Rate limited — pausing poll for ${retryAfter}s`);
+      rateLimitUntilRef.current = Date.now() + retryAfter * 1000;
+      return;
+    }
     if (res.status === 204) { setNoDevice(true); return; }
     if (res.status === 200) {
       const data = await res.json();
@@ -263,9 +226,9 @@ export default function Workout() {
               .slice(0, 6);
             console.log(`[Queue] Track changed — pre-loading BPM for ${upcoming.length} tracks`);
             Promise.all(
-              upcoming.map(async (t: any) => ({ name: t?.name, bpm: t?.id ? await getTrackBpm(t.id, t.name, t.artists?.[0]?.name) : null }))
+              upcoming.map(async (t: any) => ({ name: t?.name, bpm: t?.id ? await getTrackBpm(t.id) : null }))
             ).then((queueTracks) => {
-              console.log('[BPM] Queue analysis:', queueTracks.map((t) => ({ name: t.name, stripped: t.name ? cleanTrackTitle(t.name) : null, bpm: t.bpm, category: t.bpm != null ? (t.bpm >= HIGH_BPM_CUTOFF ? 'HIGH' : 'LOW') : 'UNKNOWN' })));
+              console.log('[BPM] Queue analysis:', queueTracks.map((t) => ({ name: t.name, bpm: t.bpm, category: t.bpm != null ? (t.bpm >= HIGH_BPM_CUTOFF ? 'HIGH' : 'LOW') : 'UNKNOWN' })));
             });
           })
           .catch(() => {});
@@ -285,7 +248,7 @@ export default function Workout() {
   }, [session, getTrackBpm]);
 
   useEffect(() => {
-    const interval = setInterval(fetchCurrentTrack, 1000);
+    const interval = setInterval(fetchCurrentTrack, 5000);
     return () => clearInterval(interval);
   }, [fetchCurrentTrack]);
 
