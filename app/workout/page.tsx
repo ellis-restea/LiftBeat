@@ -136,6 +136,13 @@ export default function Workout() {
         return true;
       }).slice(0, 100);
 
+      console.log(`[ReccoBeats] Starting BPM lookup for ${uniqueTracks.length} tracks`);
+      console.log("[ReccoBeats] First 3 tracks:", uniqueTracks.slice(0, 3).map((t: any) => ({
+        name: t.name,
+        artist: t.artists?.[0]?.name,
+        spotifyId: t.id,
+      })));
+
       const BATCH_SIZE = 10;
       const tracksWithBpm: any[] = [];
       let found = 0;
@@ -143,34 +150,58 @@ export default function Workout() {
 
       for (let i = 0; i < uniqueTracks.length; i += BATCH_SIZE) {
         const batch = uniqueTracks.slice(i, i + BATCH_SIZE);
+        const isFirstBatch = i === 0;
 
         // Step 1: look up Spotify IDs in ReccoBeats to get their UUIDs
         const spotifyIds = batch.map((t: any) => t.id).join(",");
+        const lookupUrl = `https://api.reccobeats.com/v1/track?ids=${spotifyIds}`;
+        if (isFirstBatch) console.log("[ReccoBeats] Step 1 URL:", lookupUrl);
+
         const rbIdMap = new Map<string, string>();
         try {
-          const lookupRes = await fetch(`https://api.reccobeats.com/v1/track?ids=${spotifyIds}`);
+          const lookupRes = await fetch(lookupUrl);
+          if (isFirstBatch) console.log("[ReccoBeats] Step 1 status:", lookupRes.status);
           if (lookupRes.ok) {
             const lookupData = await lookupRes.json();
+            if (isFirstBatch) console.log("[ReccoBeats] Step 1 raw response:", JSON.stringify(lookupData).slice(0, 800));
             for (const rbTrack of lookupData.content || []) {
               // href is "https://open.spotify.com/track/{spotifyId}"
               const spotifyId = rbTrack.href?.split("/").pop();
               if (spotifyId && rbTrack.id) rbIdMap.set(spotifyId, rbTrack.id);
             }
+            if (isFirstBatch) console.log(`[ReccoBeats] Step 1 mapped ${rbIdMap.size}/${batch.length} tracks`);
+          } else {
+            const errText = await lookupRes.text();
+            if (isFirstBatch) console.error("[ReccoBeats] Step 1 error body:", errText);
           }
-        } catch {}
+        } catch (err) {
+          if (isFirstBatch) console.error("[ReccoBeats] Step 1 fetch threw:", err);
+        }
 
         // Step 2: fetch audio features for each found track in parallel within the batch
         const featPromises = batch.map(async (track: any) => {
           const rbId = rbIdMap.get(track.id);
-          if (!rbId) { skipped++; return null; }
+          if (!rbId) {
+            if (isFirstBatch) console.log(`[ReccoBeats] Step 2 skip (no rbId): ${track.name} — spotifyId: ${track.id}`);
+            skipped++;
+            return null;
+          }
+          const featUrl = `https://api.reccobeats.com/v1/track/${rbId}/audio-features`;
+          if (isFirstBatch) console.log(`[ReccoBeats] Step 2 URL for "${track.name}":`, featUrl);
           try {
-            const featRes = await fetch(`https://api.reccobeats.com/v1/track/${rbId}/audio-features`);
-            if (!featRes.ok) { skipped++; return null; }
+            const featRes = await fetch(featUrl);
+            if (!featRes.ok) {
+              if (isFirstBatch) console.error(`[ReccoBeats] Step 2 status ${featRes.status} for "${track.name}":`, await featRes.text());
+              skipped++;
+              return null;
+            }
             const feat = await featRes.json();
+            if (isFirstBatch) console.log(`[ReccoBeats] Step 2 features for "${track.name}":`, feat);
             if (typeof feat.tempo !== "number") { skipped++; return null; }
             found++;
             return { ...track, bpm: feat.tempo };
-          } catch {
+          } catch (err) {
+            if (isFirstBatch) console.error(`[ReccoBeats] Step 2 fetch threw for "${track.name}":`, err);
             skipped++;
             return null;
           }
