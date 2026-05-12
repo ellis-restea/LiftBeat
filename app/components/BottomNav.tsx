@@ -34,7 +34,7 @@ export default function BottomNav({ activeIndex, onTabChange }: Props) {
 
   const handleClick = (i: number) => {
     if (i === activeIndex) return;
-    feedback("light", `Nav tap → ${TABS[i].label}`);
+    feedback("light");
     onTabChange(i);
 
     // Re-trigger the bubble animation without touching React state

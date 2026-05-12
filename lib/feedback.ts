@@ -3,6 +3,7 @@
 // or an input/textarea has focus (typing).
 
 let _ctx: AudioContext | null = null;
+let _lastSoundTime = 0; // epoch ms — enforces 150ms minimum gap between sounds
 
 function getCtx(): AudioContext | null {
   if (typeof window === "undefined") return null;
@@ -23,37 +24,24 @@ function getCtx(): AudioContext | null {
 // browser accepts it, then schedule the actual audio in the .then() callback.
 // Using async/await would resume AFTER the call stack unwinds; on some mobile
 // browsers that loses the user-activation token and resume silently fails.
-function withCtx(label: string, fn: (ctx: AudioContext) => void): void {
+function withCtx(fn: (ctx: AudioContext) => void): void {
   const ctx = getCtx();
-  if (!ctx) {
-    console.log(`[Sound] ${label} — no AudioContext`);
-    return;
-  }
-  console.log(`[Sound] ${label} — context state: ${ctx.state}`);
+  if (!ctx) return;
   if (ctx.state !== "running") {
-    ctx.resume()
-      .then(() => {
-        console.log(`[Sound] ${label} — resumed, state now: ${ctx.state}`);
-        fn(ctx);
-      })
-      .catch((err) => {
-        console.log(`[Sound] ${label} — resume failed:`, err);
-      });
+    ctx.resume().then(() => fn(ctx)).catch(() => {});
   } else {
     fn(ctx);
   }
 }
 
-// Only exponential ramps — linearRampToValueAtTime can produce audible clicks
-// at value-0 boundaries; exponential always stays positive.
-// osc.onended disconnects nodes so they can be GC'd and don't pile up.
+// Gain envelope: 3ms exponential attack → linear fade to 0 ending 5ms before
+// the oscillator stop time. The gain reaches 0 before stop so there's no click.
 function scheduleTone(
   ctx: AudioContext,
   hz: number,
   ms: number,
   vol: number,
   delayMs = 0,
-  label = "",
 ): void {
   try {
     const osc  = ctx.createOscillator();
@@ -64,25 +52,19 @@ function scheduleTone(
     const t0 = ctx.currentTime + delayMs / 1000;
     const t1 = t0 + ms / 1000;
 
-    console.log(`[Sound] scheduleTone${label ? " " + label : ""} — hz:${hz} t0:${t0.toFixed(4)} t1:${t1.toFixed(4)} now:${ctx.currentTime.toFixed(4)}`);
-
     osc.type = "sine";
     osc.frequency.setValueAtTime(hz, t0);
 
-    gain.gain.setValueAtTime(0.0001, t0);                     // near-zero start
-    gain.gain.exponentialRampToValueAtTime(vol, t0 + 0.003);  // 3ms attack
-    gain.gain.exponentialRampToValueAtTime(0.0001, t1);        // smooth decay
+    gain.gain.setValueAtTime(0.0001, t0);                    // near-zero start
+    gain.gain.exponentialRampToValueAtTime(vol, t0 + 0.003); // 3ms attack
+    gain.gain.linearRampToValueAtTime(0, t1 - 0.005);        // fade to silence 5ms before stop
 
     osc.start(t0);
-    osc.stop(t1 + 0.02);
+    osc.stop(t1);
 
-    // Disconnect nodes once done so they can be garbage-collected
-    osc.onended = () => {
-      osc.disconnect();
-      gain.disconnect();
-    };
-  } catch (err) {
-    console.log("[Sound] scheduleTone error:", err);
+    osc.onended = () => { osc.disconnect(); gain.disconnect(); };
+  } catch {
+    // silently ignore
   }
 }
 
@@ -95,13 +77,13 @@ function isInputFocused(): boolean {
   return tag === "input" || tag === "textarea" || (el as HTMLElement).isContentEditable;
 }
 
-const SOUNDS: Record<FeedbackType, (ctx: AudioContext, label: string) => void> = {
-  light:  (ctx, lbl) => scheduleTone(ctx, 800, 20, 0.08, 0, lbl),
-  medium: (ctx, lbl) => scheduleTone(ctx, 600, 30, 0.10, 0, lbl),
-  heavy:  (ctx, lbl) => scheduleTone(ctx, 400, 50, 0.12, 0, lbl),
-  error:  (ctx, lbl) => {
-    scheduleTone(ctx, 300, 40, 0.10, 0,  lbl);
-    scheduleTone(ctx, 300, 40, 0.10, 80, lbl);
+const SOUNDS: Record<FeedbackType, (ctx: AudioContext) => void> = {
+  light:  (ctx) => scheduleTone(ctx, 800, 12, 0.08),
+  medium: (ctx) => scheduleTone(ctx, 600, 18, 0.10),
+  heavy:  (ctx) => scheduleTone(ctx, 400, 25, 0.12),
+  error:  (ctx) => {
+    scheduleTone(ctx, 300, 25, 0.10, 0);
+    scheduleTone(ctx, 300, 25, 0.10, 80);
   },
 };
 
@@ -114,12 +96,14 @@ const HAPTICS: Record<FeedbackType, () => void> = {
 
 export type FeedbackType = "light" | "medium" | "heavy" | "error";
 
-export function sound(type: FeedbackType, label = ""): void {
+export function sound(type: FeedbackType): void {
   if (typeof window === "undefined") return;
   if (isInputFocused()) return;
   if (localStorage.getItem("ls_sound") === "false") return;
-  const tag = label || type;
-  withCtx(tag, (ctx) => SOUNDS[type](ctx, tag));
+  const now = Date.now();
+  if (now - _lastSoundTime < 150) return; // too soon — skip to avoid browser suppression
+  _lastSoundTime = now;
+  withCtx(SOUNDS[type]);
 }
 
 export function haptic(type: FeedbackType): void {
@@ -129,7 +113,7 @@ export function haptic(type: FeedbackType): void {
   HAPTICS[type]();
 }
 
-export function feedback(type: FeedbackType, label = ""): void {
-  sound(type, label);
+export function feedback(type: FeedbackType): void {
+  sound(type);
   haptic(type);
 }
