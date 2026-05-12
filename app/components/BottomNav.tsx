@@ -1,4 +1,5 @@
 "use client";
+import { useRef } from "react";
 import { Home, Music, BarChart2, Settings } from "lucide-react";
 
 const TABS = [
@@ -8,16 +9,17 @@ const TABS = [
   { label: "Settings", icon: Settings  },
 ];
 
-// Nav geometry (px)
-const NAV_W   = 320;
-const PAD     = 16;
-const TAB_W   = (NAV_W - PAD * 2) / 4; // 72
-const PILL_W  = 56;
-const PILL_H  = 36;
+// 4 tabs × 80px = exactly 320px — no padding offset, perfect centering
+const NAV_W  = 320;
+const NAV_H  = 64;
+const TAB_W  = NAV_W / 4; // 80
+const PILL_W = 60;
+const PILL_H = 54; // 50% taller than original 36px
 
-function pillLeft(index: number) {
-  const center = PAD + index * TAB_W + TAB_W / 2;
-  return center - PILL_W / 2;
+function pillLeft(index: number): number {
+  // Center of tab i = TAB_W * i + TAB_W / 2
+  // Pill left edge  = center − PILL_W / 2
+  return TAB_W * index + (TAB_W - PILL_W) / 2;
 }
 
 interface Props {
@@ -26,6 +28,26 @@ interface Props {
 }
 
 export default function BottomNav({ activeIndex, onTabChange }: Props) {
+  const pillRef  = useRef<HTMLDivElement>(null);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleClick = (i: number) => {
+    if (i === activeIndex) return;
+    onTabChange(i);
+
+    // Re-trigger the bubble animation without touching React state
+    const pill = pillRef.current;
+    if (!pill) return;
+    pill.classList.remove("bubble-transit");
+    void pill.offsetWidth; // force style flush so the animation restarts
+    pill.classList.add("bubble-transit");
+
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => {
+      pillRef.current?.classList.remove("bubble-transit");
+    }, 340);
+  };
+
   return (
     <div
       style={{
@@ -34,22 +56,22 @@ export default function BottomNav({ activeIndex, onTabChange }: Props) {
         left: "50%",
         transform: "translateX(-50%)",
         width: NAV_W,
-        height: 64,
+        height: NAV_H,
         borderRadius: 9999,
         background: "rgba(15, 17, 23, 0.88)",
         backdropFilter: "blur(20px)",
         WebkitBackdropFilter: "blur(20px)",
         border: "1px solid rgba(255,255,255,0.08)",
-        boxShadow:
-          "0 8px 32px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.04)",
+        boxShadow: "0 8px 32px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.04)",
         display: "flex",
         alignItems: "center",
         zIndex: 100,
         overflow: "hidden",
       }}
     >
-      {/* Sliding pill */}
+      {/* Bubble pill — left transitions via CSS, appearance via .bubble-transit keyframe */}
       <div
+        ref={pillRef}
         style={{
           position: "absolute",
           top: "50%",
@@ -58,20 +80,19 @@ export default function BottomNav({ activeIndex, onTabChange }: Props) {
           height: PILL_H,
           borderRadius: 9999,
           transform: "translateY(-50%)",
-          background: "rgba(59,130,246,0.1)",
-          border: "1px solid rgba(255,255,255,0.13)",
+          background: "rgba(59, 130, 246, 0.08)",
+          boxShadow: "0 0 0 1px rgba(255,255,255,0.14)",
           transition: "left 300ms cubic-bezier(0.4, 0, 0.2, 1)",
           pointerEvents: "none",
         }}
       />
 
-      {/* Tab buttons */}
       {TABS.map(({ label, icon: Icon }, i) => {
         const active = i === activeIndex;
         return (
           <button
             key={i}
-            onClick={() => onTabChange(i)}
+            onClick={() => handleClick(i)}
             style={{
               width: TAB_W,
               height: "100%",
@@ -83,18 +104,17 @@ export default function BottomNav({ activeIndex, onTabChange }: Props) {
               background: "none",
               border: "none",
               cursor: "pointer",
-              flexShrink: 0,
               position: "relative",
               zIndex: 1,
-              paddingLeft: 0,
-              paddingRight: 0,
+              flexShrink: 0,
+              padding: 0,
             }}
           >
             <Icon
               size={21}
               color={active ? "#3b82f6" : "#64748b"}
               strokeWidth={active ? 2.2 : 1.8}
-              style={{ transition: "color 250ms ease, stroke 250ms ease" }}
+              style={{ transition: "color 250ms ease" }}
             />
             <span
               style={{

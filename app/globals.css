@@ -28,6 +28,56 @@
   to { transform: rotate(360deg); }
 }
 
+/* Bubble pill transition animation — organic warp + glass sheen */
+@keyframes bubbleTransit {
+  0% {
+    border-radius: 9999px;
+    background: rgba(59, 130, 246, 0.08);
+    box-shadow: 0 0 0 1px rgba(255,255,255,0.14);
+    transform: translateY(-50%) scaleX(1) scaleY(1);
+  }
+  22% {
+    border-radius: 48% 52% 44% 56% / 50% 47% 53% 50%;
+    background: rgba(255,255,255,0.04);
+    box-shadow:
+      0 0 0 1.5px rgba(255,255,255,0.70),
+      inset 0 2px 7px rgba(255,255,255,0.52),
+      inset 0 -1px 4px rgba(130,205,255,0.28),
+      0 3px 18px rgba(255,255,255,0.08);
+    transform: translateY(-50%) scaleX(1.09) scaleY(0.93);
+  }
+  52% {
+    border-radius: 52% 48% 58% 42% / 43% 57% 47% 53%;
+    background: rgba(255,255,255,0.02);
+    box-shadow:
+      0 0 0 1.5px rgba(255,255,255,0.82),
+      inset 0 2px 10px rgba(255,255,255,0.65),
+      inset 0 -2px 5px rgba(150,215,255,0.35),
+      0 5px 24px rgba(255,255,255,0.05);
+    transform: translateY(-50%) scaleX(1.13) scaleY(0.90);
+  }
+  78% {
+    border-radius: 50% 50% 54% 46% / 54% 46% 50% 50%;
+    background: rgba(255,255,255,0.04);
+    box-shadow:
+      0 0 0 1.2px rgba(255,255,255,0.52),
+      inset 0 1px 4px rgba(255,255,255,0.40),
+      inset 0 -1px 2px rgba(120,195,255,0.18),
+      0 2px 10px rgba(255,255,255,0.05);
+    transform: translateY(-50%) scaleX(1.04) scaleY(0.97);
+  }
+  100% {
+    border-radius: 9999px;
+    background: rgba(59, 130, 246, 0.08);
+    box-shadow: 0 0 0 1px rgba(255,255,255,0.14);
+    transform: translateY(-50%) scaleX(1) scaleY(1);
+  }
+}
+
+.bubble-transit {
+  animation: bubbleTransit 300ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
 @keyframes shimmer {
   0%   { background-position: -400% 0; }
   100% { background-position:  400% 0; }
