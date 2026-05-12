@@ -45,7 +45,8 @@ export default function MusicTab({ onDone }: Props) {
   }, [session, status]);
 
   const toggle = (id: string) => {
-    feedback("medium");
+    console.log("[Sound] Playlist tap firing — id:", id);
+    feedback("medium", "Playlist toggle");
     setSelected((prev) =>
       prev.includes(id) ? prev.filter((p) => p !== id) : [...prev, id]
     );
@@ -53,7 +54,8 @@ export default function MusicTab({ onDone }: Props) {
 
   const handleSave = async () => {
     if (!session?.user?.name || selected.length === 0) return;
-    feedback("medium");
+    console.log("[Sound] Save playlist button firing");
+    feedback("medium", "Save playlists");
     setSaving(true);
     await supabase
       .from("user_playlists")
