@@ -276,7 +276,7 @@ function WorkoutInner() {
     const res = await spotifyFetch("https://api.spotify.com/v1/me/player/currently-playing", {
       headers: { Authorization: `Bearer ${session.accessToken}` },
     });
-    if (res.status === 204) { setNoDevice(true); return; }
+    if (res.status === 204) { if (workoutStateRef.current === "idle") setNoDevice(true); return; }
     if (res.status === 200) {
       const data = await res.json();
       const newId = data?.item?.id;
@@ -369,6 +369,7 @@ function WorkoutInner() {
       body: JSON.stringify({}),
     });
     setWorkoutState("warmup");
+    await new Promise((r) => setTimeout(r, 500));
     ensureTrackEnergy(true);
   };
 
