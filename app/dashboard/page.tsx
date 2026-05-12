@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import LoadingScreen from "../components/LoadingScreen";
+import BottomNav from "../components/BottomNav";
 
 interface Workout {
   id: string;
@@ -18,8 +19,6 @@ export default function Dashboard() {
   const [hasPlaylists, setHasPlaylists] = useState(false);
   const [loading, setLoading] = useState(true);
   const [deletingId, setDeletingId] = useState<string | null>(null);
-  const [playlistCoverUrl, setPlaylistCoverUrl] = useState<string | null>(null);
-  const [firstPlaylistId, setFirstPlaylistId] = useState<string | null>(null);
 
   useEffect(() => {
     if (status === "unauthenticated") router.push("/");
@@ -43,22 +42,9 @@ export default function Dashboard() {
       const ids = playlistsRes.data?.playlist_ids;
       const hasPl = Array.isArray(ids) && ids.length > 0;
       setHasPlaylists(hasPl);
-      if (hasPl) setFirstPlaylistId(ids[0]);
       setLoading(false);
     });
   }, [session]);
-
-  useEffect(() => {
-    if (!firstPlaylistId || !session?.accessToken) return;
-    fetch(`https://api.spotify.com/v1/playlists/${firstPlaylistId}?fields=images`, {
-      headers: { Authorization: `Bearer ${session.accessToken}` },
-    })
-      .then((r) => r.json())
-      .then((data) => {
-        if (data.images?.[0]?.url) setPlaylistCoverUrl(data.images[0].url);
-      })
-      .catch(() => {});
-  }, [firstPlaylistId, session]);
 
   const startDelete = (workoutId: string, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -80,7 +66,7 @@ export default function Dashboard() {
   if (status === "loading" || loading) return <LoadingScreen />;
 
   return (
-    <div className="min-h-screen bg-[#0a0a0f] text-[#f1f5f9] p-8">
+    <div className="min-h-screen bg-[#0a0a0f] text-[#f1f5f9] p-8 pb-24">
       <div className="max-w-md mx-auto">
         <div className="flex justify-between items-center mb-8">
           <div>
@@ -89,34 +75,12 @@ export default function Dashboard() {
               Hey, {session?.user?.name?.split(" ")[0]} 👋
             </p>
           </div>
-          <div className="flex items-center gap-3">
-            <div
-              role="button"
-              tabIndex={0}
-              onClick={() => router.push(hasPlaylists ? "/playlist-select?mode=edit" : "/playlist-select")}
-              className="relative w-12 h-12 rounded-full shrink-0 cursor-pointer overflow-hidden bg-[#1a1d2e]"
-            >
-              {playlistCoverUrl && (
-                <img
-                  src={playlistCoverUrl}
-                  alt="playlist"
-                  className="absolute inset-0 w-full h-full object-cover"
-                />
-              )}
-              <div className="absolute inset-0 rounded-full bg-black/40" />
-              <div className="absolute inset-0 flex items-center justify-center">
-                <svg viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4 text-white">
-                  <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z" />
-                </svg>
-              </div>
-            </div>
-            <button
-              onClick={() => signOut()}
-              className="text-[#64748b] hover:text-white text-sm transition"
-            >
-              Sign out
-            </button>
-          </div>
+          <button
+            onClick={() => signOut()}
+            className="text-[#64748b] hover:text-white text-sm transition"
+          >
+            Sign out
+          </button>
         </div>
 
         <h2 className="text-lg font-semibold tracking-wide mb-4">Your Workouts</h2>
@@ -217,6 +181,7 @@ export default function Dashboard() {
           </a>
         </p>
       </div>
+      <BottomNav />
     </div>
   );
 }
