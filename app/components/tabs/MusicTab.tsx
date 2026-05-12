@@ -2,7 +2,6 @@
 import { useSession } from "next-auth/react";
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
-import LoadingScreen from "../LoadingScreen";
 
 interface Props { onDone: () => void; }
 
@@ -63,7 +62,26 @@ export default function MusicTab({ onDone }: Props) {
     }, 900);
   };
 
-  if (loading) return <LoadingScreen />;
+  if (loading) return (
+    <div className="p-8">
+      <div className="max-w-2xl mx-auto">
+        <div className="skeleton h-8 w-28 mb-2" />
+        <div className="skeleton h-4 w-72 mb-6" />
+        <div className="card-metallic rounded-xl p-4 mb-6 h-14" />
+        <div className="grid gap-2">
+          {[65, 80, 55, 75, 60, 70].map((w, i) => (
+            <div key={i} className="card-metallic rounded-xl p-3 flex items-center gap-4">
+              <div className="skeleton w-12 h-12 rounded-lg shrink-0" />
+              <div className="flex-1 grid gap-2">
+                <div className="skeleton h-4 rounded" style={{ width: `${w}%` }} />
+                <div className="skeleton h-3 rounded w-14" />
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
 
   if (fetchError)
     return (

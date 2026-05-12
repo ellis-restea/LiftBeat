@@ -58,8 +58,16 @@ export default function HomeTab({ hasPlaylists }: Props) {
         <h2 className="text-lg font-semibold tracking-wide mb-4">Your Workouts</h2>
 
         {loading ? (
-          <div className="card-metallic rounded-xl p-8 text-center text-[#64748b]">
-            Loading…
+          <div className="grid gap-3 mb-4">
+            {[55, 70, 45].map((w, i) => (
+              <div key={i} className="card-metallic rounded-xl p-4 flex items-center justify-between">
+                <div className="flex-1">
+                  <div className="skeleton h-4 rounded mb-2" style={{ width: `${w}%` }} />
+                  <div className="skeleton h-3 rounded w-16" />
+                </div>
+                <div className="skeleton w-5 h-4 rounded ml-4" />
+              </div>
+            ))}
           </div>
         ) : (
           <div className="grid gap-3 mb-4">
