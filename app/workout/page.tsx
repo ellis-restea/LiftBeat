@@ -3,6 +3,7 @@ import { useSearchParams, useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { useEffect, useState, useCallback, useRef, Suspense } from "react";
 import { supabase } from "@/lib/supabase";
+import { feedback } from "@/lib/feedback";
 import LoadingScreen from "../components/LoadingScreen";
 
 interface Exercise {
@@ -355,6 +356,7 @@ function WorkoutInner() {
   // the user open Spotify and press Start again — no polling loop.
   const handleStart = async () => {
     if (!session?.accessToken) return;
+    feedback("heavy");
     const devicesRes = await spotifyFetch("https://api.spotify.com/v1/me/player/devices", {
       headers: { Authorization: `Bearer ${session.accessToken}` },
     });
@@ -374,10 +376,11 @@ function WorkoutInner() {
     ensureTrackEnergy(true);
   };
 
-  const handleStartSet = () => setWorkoutState("exercising");
+  const handleStartSet = () => { feedback("heavy"); setWorkoutState("exercising"); };
 
   const handleSetDone = () => {
     if (!currentExercise) return;
+    feedback("heavy");
     setSetsCompleted((c) => c + 1);
 
     const nextExercise = exercises[currentExerciseIndex + 1];

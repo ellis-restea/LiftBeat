@@ -4,6 +4,7 @@ import { useState, useEffect, Suspense } from "react";
 import { useSession } from "next-auth/react";
 import { supabase } from "@/lib/supabase";
 import LoadingScreen from "../components/LoadingScreen";
+import { feedback } from "@/lib/feedback";
 
 interface Exercise {
   name: string;
@@ -57,10 +58,12 @@ function WorkoutSetupInner() {
   }, [editId]);
 
   const addExercise = () => {
+    feedback("light");
     setExercises([...exercises, { name: "", sets: 3, reps: 12, rest_seconds: 120, superset_with: null }]);
   };
 
   const updateExercise = (index: number, field: keyof Exercise, value: any) => {
+    feedback("light");
     const updated = [...exercises];
     updated[index] = { ...updated[index], [field]: value };
 
@@ -75,6 +78,7 @@ function WorkoutSetupInner() {
   };
 
   const toggleSuperset = (index: number) => {
+    feedback("light");
     const updated = [...exercises];
     const current = updated[index];
     const partnerIdx = index - 1;
@@ -93,6 +97,7 @@ function WorkoutSetupInner() {
 
   const handleSave = async () => {
     if (!workoutName.trim() || !session?.user?.name) return;
+    feedback("medium");
     setSaving(true);
     setSaveError(null);
 

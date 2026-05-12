@@ -3,6 +3,7 @@ import { useSession, signOut } from "next-auth/react";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import { feedback } from "@/lib/feedback";
 
 interface Workout { id: string; name: string; created_at: string; }
 interface Props { hasPlaylists: boolean; }
@@ -27,10 +28,11 @@ export default function HomeTab({ hasPlaylists }: Props) {
       });
   }, [session]);
 
-  const startDelete   = (id: string, e: React.MouseEvent) => { e.stopPropagation(); setDeletingId(id); };
-  const cancelDelete  = (e: React.MouseEvent) => { e.stopPropagation(); setDeletingId(null); };
+  const startDelete   = (id: string, e: React.MouseEvent) => { e.stopPropagation(); feedback("medium"); setDeletingId(id); };
+  const cancelDelete  = (e: React.MouseEvent) => { e.stopPropagation(); feedback("light"); setDeletingId(null); };
   const confirmDelete = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
+    feedback("medium");
     await supabase.from("workouts").delete().eq("id", id);
     setWorkouts((prev) => prev.filter((w) => w.id !== id));
     setDeletingId(null);

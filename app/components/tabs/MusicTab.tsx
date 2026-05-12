@@ -2,6 +2,7 @@
 import { useSession } from "next-auth/react";
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import { feedback } from "@/lib/feedback";
 
 interface Props { onDone: () => void; }
 
@@ -43,13 +44,16 @@ export default function MusicTab({ onDone }: Props) {
       });
   }, [session, status]);
 
-  const toggle = (id: string) =>
+  const toggle = (id: string) => {
+    feedback("medium");
     setSelected((prev) =>
       prev.includes(id) ? prev.filter((p) => p !== id) : [...prev, id]
     );
+  };
 
   const handleSave = async () => {
     if (!session?.user?.name || selected.length === 0) return;
+    feedback("medium");
     setSaving(true);
     await supabase
       .from("user_playlists")

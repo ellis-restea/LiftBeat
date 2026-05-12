@@ -1,6 +1,7 @@
 "use client";
 import { useRef } from "react";
 import { Home, Music, BarChart2, Settings } from "lucide-react";
+import { feedback } from "@/lib/feedback";
 
 const TABS = [
   { label: "Home",     icon: Home      },
@@ -33,6 +34,7 @@ export default function BottomNav({ activeIndex, onTabChange }: Props) {
 
   const handleClick = (i: number) => {
     if (i === activeIndex) return;
+    feedback("light");
     onTabChange(i);
 
     // Re-trigger the bubble animation without touching React state
