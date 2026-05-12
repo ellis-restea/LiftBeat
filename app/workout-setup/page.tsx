@@ -3,6 +3,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useState, useEffect, Suspense } from "react";
 import { useSession } from "next-auth/react";
 import { supabase } from "@/lib/supabase";
+import LoadingScreen from "../components/LoadingScreen";
 
 interface Exercise {
   name: string;
@@ -152,12 +153,7 @@ function WorkoutSetupInner() {
     router.push("/dashboard");
   };
 
-  if (loadingEdit)
-    return (
-      <div className="flex items-center justify-center min-h-screen bg-black text-white">
-        Loading workout...
-      </div>
-    );
+  if (loadingEdit) return <LoadingScreen />;
 
   return (
     <div className="min-h-screen bg-black text-white p-8">

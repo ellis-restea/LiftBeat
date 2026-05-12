@@ -3,6 +3,7 @@ import { useSession } from "next-auth/react";
 import { useEffect, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import LoadingScreen from "../components/LoadingScreen";
 
 export default function PlaylistSelect() {
   return <Suspense><PlaylistSelectInner /></Suspense>;
@@ -73,12 +74,7 @@ function PlaylistSelectInner() {
     router.push(mode === "edit" ? "/dashboard" : "/workout-setup");
   };
 
-  if (loading)
-    return (
-      <div className="flex items-center justify-center min-h-screen bg-black text-white">
-        Loading your playlists...
-      </div>
-    );
+  if (loading) return <LoadingScreen />;
 
   if (fetchError)
     return (

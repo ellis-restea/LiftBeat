@@ -2,6 +2,7 @@
 import { useSession, signIn } from "next-auth/react";
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
+import LoadingScreen from "./components/LoadingScreen";
 
 export default function Home() {
   const { data: session, status } = useSession();
@@ -13,14 +14,7 @@ export default function Home() {
     }
   }, [status]);
 
-  if (status === "loading") {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-screen bg-black text-white gap-4">
-        <h1 className="text-4xl font-bold tracking-tight">LiftSync</h1>
-        <div className="w-6 h-6 border-2 border-green-500 border-t-transparent rounded-full animate-spin" />
-      </div>
-    );
-  }
+  if (status === "loading") return <LoadingScreen />;
 
   return (
     <div className="min-h-screen bg-black text-white flex flex-col">

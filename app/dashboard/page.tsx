@@ -3,6 +3,7 @@ import { useSession, signOut } from "next-auth/react";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import LoadingScreen from "../components/LoadingScreen";
 
 interface Workout {
   id: string;
@@ -76,13 +77,7 @@ export default function Dashboard() {
     setDeletingId(null);
   };
 
-  if (status === "loading" || loading)
-    return (
-      <div className="flex flex-col items-center justify-center min-h-screen bg-black text-white gap-4">
-        <h1 className="text-4xl font-bold tracking-tight">LiftSync</h1>
-        <div className="w-6 h-6 border-2 border-green-500 border-t-transparent rounded-full animate-spin" />
-      </div>
-    );
+  if (status === "loading" || loading) return <LoadingScreen />;
 
   return (
     <div className="min-h-screen bg-black text-white p-8">

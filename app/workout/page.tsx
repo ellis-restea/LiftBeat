@@ -3,6 +3,7 @@ import { useSearchParams, useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { useEffect, useState, useCallback, useRef, Suspense } from "react";
 import { supabase } from "@/lib/supabase";
+import LoadingScreen from "../components/LoadingScreen";
 
 interface Exercise {
   id: string;
@@ -505,12 +506,7 @@ function WorkoutInner() {
     seekTo(getProgressFromX(e.clientX));
   };
 
-  if (loading)
-    return (
-      <div className="flex items-center justify-center min-h-screen bg-black text-white">
-        Loading workout...
-      </div>
-    );
+  if (loading) return <LoadingScreen />;
 
   if (exercises.length === 0)
     return (
