@@ -64,25 +64,37 @@ App Logic:
 Spotify token auto-refreshes via NextAuth JWT callback
 Playlists fetched from Spotify, user selects one or more, saved to Supabase
 BPM detection: queue-based, no pre-loading. On state change, fetches currently-playing, looks up BPM, skips forward up to 5x until energy matches.
-BPM source: ReccoBeats API (no auth, https://api.reccobeats.com) — two-step: GET /v1/track?ids={spotifyId} → UUID, then GET /v1/track/{uuid}/audio-features → tempo. Falls back to Spotify GET /v1/audio-analysis/{id}.
+BPM source priority: ReccoBeats → GetSongBPM → skip.
+  - ReccoBeats: GET /v1/track?ids={spotifyId} → UUID → GET /v1/track/{uuid}/audio-features → tempo
+  - GetSongBPM: GET https://api.getsong.co/search/?api_key={key}&type=song&lookup={trackName}
+      Step 1: search full track name, require confirmed artist match (bidirectional partial, case-insensitive)
+      Step 2: if no match, strip dash/paren suffixes (e.g. "Dakota - Decade In The Sun Version" → "Dakota") and retry
+      API key: NEXT_PUBLIC_GETSONGBPM_KEY env var
+      Artist field in API response varies — code tries: artist.title, artist.name, artist_name, artist (string)
+      Result only accepted if artist name is confirmed — never uses unverified first-result fallback
 Fixed BPM cutoff: 120 BPM. ≥120 = HIGH (exercising/warmup), <120 = LOW (resting).
 Tracks not found in either API are skipped (not accepted as unknown energy).
 BPM results cached in-memory (bpmCacheRef: Map<string, number|null>) for the session.
+BPM source cached in-memory (bpmSourceCacheRef: Map<string, string>) — values: 'ReccoBeats', 'GetSongBPM', 'unknown'.
 On track change: pre-warms BPM cache for next 6 tracks in queue (fire-and-forget).
+Queue analysis log includes: { name, bpm, category, api } — api shows which source found the BPM.
 Workout screen has 4 states: idle → warmup → exercising → resting
 Background color changes per state: dark (idle), amber (warmup), red (exercising), blue (resting)
 Rest timer counts down, auto-switches back to exercising when done
 Song progress bar polls Spotify every second
 Manual skip (⏭) triggers BPM check after 800ms — steers to correct energy for current state
 State change (Done with Set → resting): 500ms delay before BPM check so Spotify settles first
+Start Workout: 500ms delay before ensureTrackEnergy so Spotify registers the play command first
+noDevice banner only shown in idle state — 204 from currently-playing during active workout is ignored
 Spotify scopes: user-read-private user-read-playback-state user-modify-playback-state playlist-read-private playlist-read-collaborative streaming
 show_dialog: true on Spotify OAuth to always force consent screen (ensures latest scopes)
+GetSongBPM attribution footer present in: layout.tsx (server-rendered), dashboard, landing page, workout page
 
 
 Known Issues / Limitations:
 
-ReccoBeats has poor coverage of obscure/slowed/lo-fi tracks — these get skipped automatically
-Spotify audio-analysis fallback may return 403 for apps in development quota mode
+ReccoBeats has poor coverage of obscure/slowed/lo-fi tracks — falls through to GetSongBPM
+GetSongBPM artist field structure varies per response; code tries multiple field names
 user_playlists table in Supabase still needs to be created if not done yet (see table schema above)
 
 
