@@ -11,6 +11,15 @@
   to { opacity: 1; transform: translateY(0); }
 }
 
+@keyframes tabEnter {
+  from { opacity: 0; transform: scale(0.97) translateZ(0); }
+  to   { opacity: 1; transform: scale(1)    translateZ(0); }
+}
+
+.tab-enter {
+  animation: tabEnter 200ms ease-out forwards;
+}
+
 @keyframes swish {
   to { --swish-angle: 360deg; }
 }

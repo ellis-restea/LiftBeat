@@ -4,7 +4,6 @@ import { useEffect, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import LoadingScreen from "../components/LoadingScreen";
-import BottomNav from "../components/BottomNav";
 
 export default function PlaylistSelect() {
   return <Suspense><PlaylistSelectInner /></Suspense>;
@@ -91,7 +90,7 @@ function PlaylistSelectInner() {
     );
 
   return (
-    <div className="min-h-screen bg-[#0a0a0f] text-[#f1f5f9] p-8 pb-24">
+    <div className="min-h-screen bg-[#0a0a0f] text-[#f1f5f9] p-8">
       <div className="max-w-2xl mx-auto">
         <h1 className="text-3xl font-bold tracking-wide mb-1">
           {mode === "edit" ? "Update playlists" : "Pick your playlists"}
@@ -155,7 +154,6 @@ function PlaylistSelectInner() {
           </button>
         )}
       </div>
-      <BottomNav />
     </div>
   );
 }
