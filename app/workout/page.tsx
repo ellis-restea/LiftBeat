@@ -164,17 +164,21 @@ function WorkoutInner() {
           }
           const data = await res.json();
           const results: any[] = Array.isArray(data.search) ? data.search : [];
-          console.log(`[GetSongBPM] "${title}" → ${results.length} results, artists: [${results.map((r) => r.artist?.title).join(', ')}]`);
+          if (results.length > 0) console.log(`[GetSongBPM] first result raw:`, JSON.stringify(results[0]));
+          // Extract artist name from whichever field the API uses
+          const getArtist = (r: any): string =>
+            (r.artist?.title || r.artist?.name || r.artist_name ||
+             (typeof r.artist === 'string' ? r.artist : '') || '').toLowerCase();
+          console.log(`[GetSongBPM] "${title}" → ${results.length} results, artists: [${results.map(getArtist).join(', ')}]`);
           // Always require a confirmed artist match — never accept unverified results.
           const match = results.find((r) => {
-            const resultArtist = r.artist?.title?.toLowerCase() ?? '';
-            return resultArtist && artistLower
-              ? resultArtist.includes(artistLower) || artistLower.includes(resultArtist)
-              : false;
+            const resultArtist = getArtist(r);
+            if (!resultArtist || !artistLower) return false;
+            return resultArtist.includes(artistLower) || artistLower.includes(resultArtist);
           });
           if (!match) return null;
           const bpm = parseFloat(String(match.tempo));
-          return isNaN(bpm) ? null : { bpm, matchedArtist: match.artist?.title ?? 'unknown' };
+          return isNaN(bpm) ? null : { bpm, matchedArtist: getArtist(match) || 'unknown' };
         } catch (err) {
           console.log(`[GetSongBPM] threw for "${title}":`, err);
           return null;
