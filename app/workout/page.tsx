@@ -531,14 +531,14 @@ function WorkoutInner() {
     return (
       <>
         <div className="fixed inset-0 bg-[#0a0a0f]" style={{ zIndex: -1 }} />
-        <div className="fixed inset-0 pointer-events-none" style={{ zIndex: 0, background: 'radial-gradient(ellipse at top, #10b98122 0%, transparent 70%)' }} />
+        <div className="fixed inset-0 pointer-events-none" style={{ zIndex: 0, background: 'radial-gradient(ellipse 55% 35% at 50% 0%, #10b98188 0%, transparent 100%), radial-gradient(ellipse 90% 55% at 50% 0%, #10b98144 0%, transparent 100%), radial-gradient(ellipse 120% 80% at 50% 0%, #10b98118 0%, transparent 100%)' }} />
         <div className="relative flex flex-col items-center justify-center min-h-screen text-white gap-6" style={{ zIndex: 1 }}>
           <h1 className="text-5xl">💪</h1>
           <h1 className="text-4xl font-bold tracking-wide">Workout Complete!</h1>
           <p className="text-[#64748b]">{totalSets} sets crushed</p>
           <button
             onClick={() => router.push("/dashboard")}
-            className="bg-emerald-500 hover:bg-emerald-400 text-white font-bold px-8 py-4 rounded-xl text-lg mt-4 active:scale-95 transition-transform"
+            className="bg-emerald-500 hover:bg-emerald-400 text-white font-bold px-8 py-4 rounded-xl text-lg mt-4 active:scale-95 transition-transform btn-animated"
           >
             Back to Dashboard
           </button>
@@ -584,7 +584,11 @@ function WorkoutInner() {
         {(Object.entries(glowColors) as [WorkoutState, string][]).map(([state, color]) => (
           <div key={state} style={{
             position: 'absolute', inset: 0,
-            background: `radial-gradient(ellipse at top, ${color}22 0%, transparent 70%)`,
+            background: [
+              `radial-gradient(ellipse 55% 35% at 50% 0%, ${color}88 0%, transparent 100%)`,
+              `radial-gradient(ellipse 90% 55% at 50% 0%, ${color}44 0%, transparent 100%)`,
+              `radial-gradient(ellipse 120% 80% at 50% 0%, ${color}18 0%, transparent 100%)`,
+            ].join(', '),
             opacity: workoutState === state ? 1 : 0,
             transition: 'opacity 700ms ease',
           }} />
@@ -716,7 +720,7 @@ function WorkoutInner() {
         {workoutState === "idle" && (
           <button
             onClick={handleStart}
-            className="w-full bg-blue-500 hover:bg-blue-400 text-white font-bold py-5 rounded-2xl text-xl touch-manipulation active:scale-95 transition-transform"
+            className="w-full bg-blue-500 hover:bg-blue-400 text-white font-bold py-5 rounded-2xl text-xl touch-manipulation active:scale-95 transition-transform btn-animated"
           >
             Start Workout 🔥
           </button>
@@ -724,7 +728,7 @@ function WorkoutInner() {
         {workoutState === "warmup" && (
           <button
             onClick={handleStartSet}
-            className="w-full bg-blue-500 hover:bg-blue-400 text-white font-bold py-5 rounded-2xl text-xl touch-manipulation active:scale-95 transition-transform"
+            className="w-full bg-blue-500 hover:bg-blue-400 text-white font-bold py-5 rounded-2xl text-xl touch-manipulation active:scale-95 transition-transform btn-animated"
           >
             Start Set 💪
           </button>
@@ -732,7 +736,7 @@ function WorkoutInner() {
         {workoutState === "exercising" && (
           <button
             onClick={handleSetDone}
-            className="w-full bg-blue-500 hover:bg-blue-400 text-white font-bold py-5 rounded-2xl text-xl touch-manipulation active:scale-95 transition-transform"
+            className="w-full bg-blue-500 hover:bg-blue-400 text-white font-bold py-5 rounded-2xl text-xl touch-manipulation active:scale-95 transition-transform btn-animated"
           >
             Done with Set ✓
           </button>

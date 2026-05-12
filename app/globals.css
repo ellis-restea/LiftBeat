@@ -1,8 +1,18 @@
 @import "tailwindcss";
 
+@property --swish-angle {
+  syntax: '<angle>';
+  initial-value: 0deg;
+  inherits: false;
+}
+
 @keyframes liftfade {
   from { opacity: 0; transform: translateY(6px); }
   to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes swish {
+  to { --swish-angle: 360deg; }
 }
 
 @layer utilities {
@@ -10,5 +20,32 @@
     background: linear-gradient(135deg, #1a1d2e 0%, #0f1117 50%, #1a1d2e 100%);
     border: 1px solid rgba(255, 255, 255, 0.06);
     box-shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
+  }
+
+  .btn-animated {
+    position: relative;
+    isolation: isolate;
+  }
+
+  .btn-animated::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    padding: 1.5px;
+    background: conic-gradient(
+      from var(--swish-angle),
+      transparent 0%,
+      #3b82f6 22%,
+      #93c5fd 32%,
+      transparent 55%
+    );
+    -webkit-mask:
+      linear-gradient(#fff 0 0) content-box,
+      linear-gradient(#fff 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+    animation: swish 2.5s linear infinite;
+    pointer-events: none;
   }
 }

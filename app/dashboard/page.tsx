@@ -205,7 +205,7 @@ export default function Dashboard() {
 
         <button
           onClick={() => router.push(hasPlaylists ? "/workout-setup" : "/playlist-select")}
-          className="w-full border border-blue-500 text-blue-500 hover:bg-blue-500/10 font-semibold py-4 rounded-xl transition active:scale-95 flex items-center justify-center gap-2"
+          className="w-full border border-blue-500 text-blue-500 hover:bg-blue-500/10 font-semibold py-4 rounded-xl transition active:scale-95 flex items-center justify-center gap-2 btn-animated"
         >
           <span className="text-xl">+</span> New Workout
         </button>

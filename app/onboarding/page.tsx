@@ -88,14 +88,14 @@ export default function Onboarding() {
         {slide.cta ? (
           <button
             onClick={handleSpotify}
-            className="w-full bg-blue-500 hover:bg-blue-400 text-white font-bold py-4 rounded-xl text-lg transition active:scale-95"
+            className="w-full bg-blue-500 hover:bg-blue-400 text-white font-bold py-4 rounded-xl text-lg transition active:scale-95 btn-animated"
           >
             {slide.cta}
           </button>
         ) : (
           <button
             onClick={handleNext}
-            className="w-full bg-blue-500 hover:bg-blue-400 text-white font-bold py-4 rounded-xl text-lg transition active:scale-95"
+            className="w-full bg-blue-500 hover:bg-blue-400 text-white font-bold py-4 rounded-xl text-lg transition active:scale-95 btn-animated"
           >
             Next →
           </button>

@@ -38,13 +38,13 @@ export default function Home() {
         <div className="flex flex-col gap-3 w-full max-w-sm mt-4">
           <button
             onClick={() => router.push("/onboarding")}
-            className="w-full bg-blue-500 hover:bg-blue-400 text-white font-bold py-4 rounded-xl text-lg transition active:scale-95"
+            className="w-full bg-blue-500 hover:bg-blue-400 text-white font-bold py-4 rounded-xl text-lg transition active:scale-95 btn-animated"
           >
             Get Started
           </button>
           <button
             onClick={() => signIn("spotify", { callbackUrl: "/dashboard" })}
-            className="w-full bg-transparent border border-blue-500 text-blue-500 hover:bg-blue-500/10 font-bold py-4 rounded-xl text-lg transition active:scale-95"
+            className="w-full bg-transparent border border-blue-500 text-blue-500 hover:bg-blue-500/10 font-bold py-4 rounded-xl text-lg transition active:scale-95 btn-animated"
           >
             Log In
           </button>

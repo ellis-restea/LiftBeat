@@ -256,7 +256,7 @@ function WorkoutSetupInner() {
           <button
             onClick={handleSave}
             disabled={!workoutName.trim() || saving}
-            className="w-full bg-blue-500 hover:bg-blue-400 disabled:opacity-50 text-white font-bold py-4 rounded-xl text-lg transition active:scale-95"
+            className="w-full bg-blue-500 hover:bg-blue-400 disabled:opacity-50 text-white font-bold py-4 rounded-xl text-lg transition active:scale-95 btn-animated"
           >
             {saving ? "Saving..." : isEditing ? "Update Workout →" : "Save Workout →"}
           </button>
