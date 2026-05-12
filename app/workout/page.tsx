@@ -515,7 +515,7 @@ function WorkoutInner() {
         <p className="text-gray-500 text-sm max-w-xs">
           The exercises failed to save. Open the browser console for the exact error — you likely need to run:
         </p>
-        <code className="bg-gray-900 text-green-400 text-xs px-4 py-3 rounded-xl">
+        <code className="card-metallic text-blue-400 text-xs px-4 py-3 rounded-xl">
           ALTER TABLE exercises ADD COLUMN superset_with integer;
         </code>
         <button
@@ -529,25 +529,28 @@ function WorkoutInner() {
 
   if (workoutState === "done")
     return (
-      <div className="flex flex-col items-center justify-center min-h-screen bg-black text-white gap-6">
-        <h1 className="text-5xl">💪</h1>
-        <h1 className="text-4xl font-bold">Workout Complete!</h1>
-        <p className="text-gray-400">{totalSets} sets crushed</p>
-        <button
-          onClick={() => router.push("/dashboard")}
-          className="bg-green-500 text-black font-bold px-8 py-4 rounded-xl text-lg mt-4"
-        >
-          Back to Dashboard
-        </button>
-      </div>
+      <>
+        <div className="fixed inset-0 bg-[#0a0a0f]" style={{ zIndex: -1 }} />
+        <div className="fixed inset-0 pointer-events-none" style={{ zIndex: 0, background: 'radial-gradient(ellipse at top, #10b98122 0%, transparent 70%)' }} />
+        <div className="relative flex flex-col items-center justify-center min-h-screen text-white gap-6" style={{ zIndex: 1 }}>
+          <h1 className="text-5xl">💪</h1>
+          <h1 className="text-4xl font-bold tracking-wide">Workout Complete!</h1>
+          <p className="text-[#64748b]">{totalSets} sets crushed</p>
+          <button
+            onClick={() => router.push("/dashboard")}
+            className="bg-emerald-500 hover:bg-emerald-400 text-white font-bold px-8 py-4 rounded-xl text-lg mt-4 active:scale-95 transition-transform"
+          >
+            Back to Dashboard
+          </button>
+        </div>
+      </>
     );
 
-  const bgColors: Record<WorkoutState, string> = {
-    idle: "bg-gray-950",
-    warmup: "bg-amber-950",
-    exercising: "bg-red-950",
-    resting: "bg-blue-950",
-    done: "bg-black",
+  const glowColors: Partial<Record<WorkoutState, string>> = {
+    warmup: '#f59e0b',
+    exercising: '#ef4444',
+    resting: '#3b82f6',
+    done: '#10b981',
   };
 
   const accentColors: Record<WorkoutState, string> = {
@@ -575,10 +578,19 @@ function WorkoutInner() {
   };
 
   return (
-    <div
-      className={`min-h-screen ${bgColors[workoutState]} text-white flex flex-col items-center justify-between p-8 transition-colors`}
-      style={{ transitionDuration: workoutState === "exercising" ? "300ms" : "700ms" }}
-    >
+    <>
+      <div className="fixed inset-0 bg-[#0a0a0f]" style={{ zIndex: -1 }} />
+      <div className="fixed inset-0 pointer-events-none" style={{ zIndex: 0 }}>
+        {(Object.entries(glowColors) as [WorkoutState, string][]).map(([state, color]) => (
+          <div key={state} style={{
+            position: 'absolute', inset: 0,
+            background: `radial-gradient(ellipse at top, ${color}22 0%, transparent 70%)`,
+            opacity: workoutState === state ? 1 : 0,
+            transition: 'opacity 700ms ease',
+          }} />
+        ))}
+      </div>
+      <div className="relative min-h-screen text-white flex flex-col items-center justify-between p-8" style={{ zIndex: 1 }}>
       {(noDevice || premiumRequired) && (
         <div
           className={`fixed top-0 left-0 right-0 z-50 backdrop-blur-sm text-sm text-center py-2.5 px-4 ${
@@ -599,7 +611,7 @@ function WorkoutInner() {
           Exercise {currentExerciseIndex + 1} of {exercises.length}
         </p>
         {isInSuperset && (
-          <span className="inline-block bg-green-500/20 text-green-400 text-xs font-bold px-3 py-0.5 rounded-full uppercase tracking-widest border border-green-500/30 mb-2">
+          <span className="inline-block bg-blue-500/20 text-blue-400 text-xs font-bold px-3 py-0.5 rounded-full uppercase tracking-widest border border-blue-500/30 mb-2">
             Superset
           </span>
         )}
@@ -704,7 +716,7 @@ function WorkoutInner() {
         {workoutState === "idle" && (
           <button
             onClick={handleStart}
-            className="w-full bg-amber-500 hover:bg-amber-400 text-black font-bold py-5 rounded-2xl text-xl touch-manipulation"
+            className="w-full bg-blue-500 hover:bg-blue-400 text-white font-bold py-5 rounded-2xl text-xl touch-manipulation active:scale-95 transition-transform"
           >
             Start Workout 🔥
           </button>
@@ -712,7 +724,7 @@ function WorkoutInner() {
         {workoutState === "warmup" && (
           <button
             onClick={handleStartSet}
-            className="w-full bg-red-500 hover:bg-red-400 text-white font-bold py-5 rounded-2xl text-xl touch-manipulation"
+            className="w-full bg-blue-500 hover:bg-blue-400 text-white font-bold py-5 rounded-2xl text-xl touch-manipulation active:scale-95 transition-transform"
           >
             Start Set 💪
           </button>
@@ -720,7 +732,7 @@ function WorkoutInner() {
         {workoutState === "exercising" && (
           <button
             onClick={handleSetDone}
-            className="w-full bg-white text-black font-bold py-5 rounded-2xl text-xl touch-manipulation"
+            className="w-full bg-blue-500 hover:bg-blue-400 text-white font-bold py-5 rounded-2xl text-xl touch-manipulation active:scale-95 transition-transform"
           >
             Done with Set ✓
           </button>
@@ -733,7 +745,7 @@ function WorkoutInner() {
           </div>
           <div className="w-full bg-gray-700 rounded-full h-2">
             <div
-              className="bg-green-500 h-2 rounded-full transition-all"
+              className="bg-blue-500 h-2 rounded-full transition-all"
               style={{ width: `${workoutProgress}%` }}
             />
           </div>
@@ -747,5 +759,6 @@ function WorkoutInner() {
         </p>
       </div>
     </div>
+    </>
   );
 }

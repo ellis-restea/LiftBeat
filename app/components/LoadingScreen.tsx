@@ -19,37 +19,61 @@ const MESSAGES = [
   "Almost there, for real...",
 ];
 
-function randomOther(exclude: number) {
+const STAR_FRAMES = [
+  { char: "✦", size: "text-3xl" },
+  { char: "✧", size: "text-xl" },
+  { char: "✸", size: "text-4xl" },
+  { char: "✹", size: "text-2xl" },
+  { char: "✺", size: "text-3xl" },
+  { char: "✻", size: "text-xl" },
+  { char: "✼", size: "text-4xl" },
+  { char: "✴", size: "text-2xl" },
+  { char: "✵", size: "text-3xl" },
+  { char: "✳", size: "text-xl" },
+  { char: "✱", size: "text-4xl" },
+];
+
+function randomOther(exclude: number, len: number) {
   let n;
-  do { n = Math.floor(Math.random() * MESSAGES.length); } while (n === exclude);
+  do { n = Math.floor(Math.random() * len); } while (n === exclude);
   return n;
 }
 
 export default function LoadingScreen() {
   const [msgIndex, setMsgIndex] = useState(() => Math.floor(Math.random() * MESSAGES.length));
-  const [tick, setTick] = useState(0);
+  const [starIndex, setStarIndex] = useState(0);
+  const [msgTick, setMsgTick] = useState(0);
 
   useEffect(() => {
-    const id = setInterval(() => {
-      setMsgIndex((prev) => randomOther(prev));
-      setTick((t) => t + 1);
-    }, 2000);
-    return () => clearInterval(id);
+    const starId = setInterval(() => {
+      setStarIndex((i) => (i + 1) % STAR_FRAMES.length);
+    }, 150);
+    return () => clearInterval(starId);
   }, []);
 
+  useEffect(() => {
+    const msgId = setInterval(() => {
+      setMsgIndex((prev) => randomOther(prev, MESSAGES.length));
+      setMsgTick((t) => t + 1);
+    }, 2000);
+    return () => clearInterval(msgId);
+  }, []);
+
+  const star = STAR_FRAMES[starIndex];
+
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen bg-black text-white gap-6">
-      <h1 className="text-4xl font-bold tracking-tight">LiftSync</h1>
+    <div className="flex flex-col items-center justify-center min-h-screen bg-[#0a0a0f] text-white gap-6">
+      <h1 className="text-4xl font-bold tracking-wide">LiftSync</h1>
       <div className="flex flex-col items-center gap-4">
         <span
-          className="text-green-400 text-4xl select-none"
-          style={{ display: "inline-block", animation: "liftspin 2s linear infinite" }}
+          className={`text-blue-500 select-none ${star.size}`}
+          style={{ display: "inline-block", width: "3rem", textAlign: "center", lineHeight: 1 }}
         >
-          ✦
+          {star.char}
         </span>
         <p
-          key={tick}
-          className="text-gray-400 text-sm text-center max-w-xs px-4"
+          key={msgTick}
+          className="text-[#64748b] text-sm text-center max-w-xs px-4 font-light"
           style={{ animation: "liftfade 0.4s ease forwards" }}
         >
           {MESSAGES[msgIndex]}

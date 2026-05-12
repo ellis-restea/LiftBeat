@@ -12,7 +12,11 @@
       "Bash(curl -s -w \"\\\\nHTTP Status: %{http_code}\\\\n\" \"https://api.reccobeats.com/v1/track/recommendation?q=test&size=10\")",
       "Bash(curl -s -w \"\\\\nHTTP Status: %{http_code}\\\\n\" \"https://api.reccobeats.com/v1/artist/search?q=test&size=10\")",
       "Bash(curl -s -w \"\\\\nHTTP Status: %{http_code}\\\\n\" \"https://api.reccobeats.com/v1/artist/search?searchText=test&size=10\")",
-      "Bash(git *)"
+      "Bash(git *)",
+      "Bash(npm run *)",
+      "Bash(claude doctor *)",
+      "PowerShell(Get-Content *)",
+      "Bash(npx next *)"
     ]
   }
 }

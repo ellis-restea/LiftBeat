@@ -44,12 +44,12 @@ export default function Onboarding() {
   };
 
   return (
-    <div className="min-h-screen bg-black text-white flex flex-col">
+    <div className="min-h-screen bg-[#0a0a0f] text-[#f1f5f9] flex flex-col">
       {/* Skip */}
       <div className="flex justify-end p-6">
         <button
           onClick={() => signIn("spotify", { callbackUrl: "/playlist-select" })}
-          className="text-gray-500 hover:text-white text-sm transition"
+          className="text-[#64748b] hover:text-white text-sm transition"
         >
           Skip
         </button>
@@ -60,13 +60,13 @@ export default function Onboarding() {
         <div className="text-6xl mb-2">{slide.visual}</div>
 
         <div>
-          <p className="text-green-400 text-xs font-bold uppercase tracking-widest mb-3">
+          <p className="text-blue-500 text-xs font-bold uppercase tracking-widest mb-3">
             {slide.tag}
           </p>
-          <h2 className="text-3xl font-black mb-4 leading-tight">{slide.headline}</h2>
-          <p className="text-gray-400 text-base max-w-sm leading-relaxed">{slide.body}</p>
+          <h2 className="text-3xl font-black tracking-wide mb-4 leading-tight">{slide.headline}</h2>
+          <p className="text-[#64748b] text-base max-w-sm leading-relaxed">{slide.body}</p>
           {slide.source && (
-            <p className="text-gray-600 text-xs mt-3 italic">{slide.source}</p>
+            <p className="text-[#64748b] text-xs mt-3 italic font-light">{slide.source}</p>
           )}
         </div>
       </div>
@@ -79,7 +79,7 @@ export default function Onboarding() {
             <div
               key={i}
               className={`h-1.5 rounded-full transition-all ${
-                i === current ? "w-6 bg-green-500" : "w-1.5 bg-gray-700"
+                i === current ? "w-6 bg-blue-500" : "w-1.5 bg-[#1a1d2e]"
               }`}
             />
           ))}
@@ -88,14 +88,14 @@ export default function Onboarding() {
         {slide.cta ? (
           <button
             onClick={handleSpotify}
-            className="w-full bg-green-500 hover:bg-green-400 text-black font-bold py-4 rounded-xl text-lg transition"
+            className="w-full bg-blue-500 hover:bg-blue-400 text-white font-bold py-4 rounded-xl text-lg transition active:scale-95"
           >
             {slide.cta}
           </button>
         ) : (
           <button
             onClick={handleNext}
-            className="w-full bg-white hover:bg-gray-100 text-black font-bold py-4 rounded-xl text-lg transition"
+            className="w-full bg-blue-500 hover:bg-blue-400 text-white font-bold py-4 rounded-xl text-lg transition active:scale-95"
           >
             Next →
           </button>

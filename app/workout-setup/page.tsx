@@ -156,29 +156,29 @@ function WorkoutSetupInner() {
   if (loadingEdit) return <LoadingScreen />;
 
   return (
-    <div className="min-h-screen bg-black text-white p-8">
+    <div className="min-h-screen bg-[#0a0a0f] text-[#f1f5f9] p-8">
       <div className="max-w-md mx-auto">
-        <h1 className="text-3xl font-bold mb-2">LiftSync</h1>
-        <p className="text-gray-400 mb-8">{isEditing ? "Edit workout" : "Build your workout"}</p>
+        <h1 className="text-3xl font-bold tracking-wide mb-2">LiftSync</h1>
+        <p className="text-[#64748b] mb-8">{isEditing ? "Edit workout" : "Build your workout"}</p>
 
         <div className="grid gap-6">
-          <div className="bg-gray-900 rounded-xl p-6">
-            <label className="text-gray-400 text-sm mb-2 block">Workout Name</label>
+          <div className="card-metallic rounded-xl p-6">
+            <label className="text-[#64748b] text-sm mb-2 block">Workout Name</label>
             <input
               type="text"
               value={workoutName}
               onChange={(e) => setWorkoutName(e.target.value)}
               placeholder="e.g. Upper Body A"
-              className="w-full bg-gray-800 text-white rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-green-500"
+              className="w-full bg-[#0a0a0f] text-[#f1f5f9] rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500 border border-white/10"
             />
           </div>
 
           {exercises.map((ex, index) => (
-            <div key={index} className="bg-gray-900 rounded-xl p-6 grid gap-4">
+            <div key={index} className="card-metallic rounded-xl p-6 grid gap-4">
               <div className="flex justify-between items-center">
-                <h2 className="font-semibold">Exercise {index + 1}</h2>
+                <h2 className="font-semibold tracking-wide">Exercise {index + 1}</h2>
                 {exercises.length > 1 && (
-                  <button onClick={() => removeExercise(index)} className="text-red-400 hover:text-red-300 text-sm">
+                  <button onClick={() => removeExercise(index)} className="text-red-400 hover:text-red-300 text-sm active:scale-95 transition-transform">
                     Remove
                   </button>
                 )}
@@ -189,41 +189,41 @@ function WorkoutSetupInner() {
                 value={ex.name}
                 onChange={(e) => updateExercise(index, "name", e.target.value)}
                 placeholder="e.g. Bench Press"
-                className="w-full bg-gray-800 text-white rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-green-500"
+                className="w-full bg-[#0a0a0f] text-[#f1f5f9] rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500 border border-white/10"
               />
 
               <div className="flex justify-between items-center">
-                <label className="text-gray-300">Sets</label>
+                <label className="text-[#94a3b8]">Sets</label>
                 <div className="flex items-center gap-3">
-                  <button onClick={() => updateExercise(index, "sets", Math.max(1, ex.sets - 1))} className="w-8 h-8 rounded-full bg-gray-700 hover:bg-gray-600 flex items-center justify-center">-</button>
+                  <button onClick={() => updateExercise(index, "sets", Math.max(1, ex.sets - 1))} className="w-8 h-8 rounded-full bg-[#1a1d2e] hover:bg-[#252840] border border-white/10 flex items-center justify-center active:scale-95 transition-transform">-</button>
                   <span className="w-6 text-center">{ex.sets}</span>
-                  <button onClick={() => updateExercise(index, "sets", ex.sets + 1)} className="w-8 h-8 rounded-full bg-gray-700 hover:bg-gray-600 flex items-center justify-center">+</button>
+                  <button onClick={() => updateExercise(index, "sets", ex.sets + 1)} className="w-8 h-8 rounded-full bg-[#1a1d2e] hover:bg-[#252840] border border-white/10 flex items-center justify-center active:scale-95 transition-transform">+</button>
                 </div>
               </div>
 
               <div className="flex justify-between items-center">
-                <label className="text-gray-300">Reps</label>
+                <label className="text-[#94a3b8]">Reps</label>
                 <div className="flex items-center gap-3">
-                  <button onClick={() => updateExercise(index, "reps", Math.max(1, ex.reps - 1))} className="w-8 h-8 rounded-full bg-gray-700 hover:bg-gray-600 flex items-center justify-center">-</button>
+                  <button onClick={() => updateExercise(index, "reps", Math.max(1, ex.reps - 1))} className="w-8 h-8 rounded-full bg-[#1a1d2e] hover:bg-[#252840] border border-white/10 flex items-center justify-center active:scale-95 transition-transform">-</button>
                   <span className="w-6 text-center">{ex.reps}</span>
-                  <button onClick={() => updateExercise(index, "reps", ex.reps + 1)} className="w-8 h-8 rounded-full bg-gray-700 hover:bg-gray-600 flex items-center justify-center">+</button>
+                  <button onClick={() => updateExercise(index, "reps", ex.reps + 1)} className="w-8 h-8 rounded-full bg-[#1a1d2e] hover:bg-[#252840] border border-white/10 flex items-center justify-center active:scale-95 transition-transform">+</button>
                 </div>
               </div>
 
               <div className="flex justify-between items-center">
-                <label className="text-gray-300">Rest (seconds)</label>
+                <label className="text-[#94a3b8]">Rest (seconds)</label>
                 <div className="flex items-center gap-3">
-                  <button onClick={() => updateExercise(index, "rest_seconds", Math.max(15, ex.rest_seconds - 15))} className="w-8 h-8 rounded-full bg-gray-700 hover:bg-gray-600 flex items-center justify-center">-</button>
+                  <button onClick={() => updateExercise(index, "rest_seconds", Math.max(15, ex.rest_seconds - 15))} className="w-8 h-8 rounded-full bg-[#1a1d2e] hover:bg-[#252840] border border-white/10 flex items-center justify-center active:scale-95 transition-transform">-</button>
                   <span className="w-12 text-center">{ex.rest_seconds}s</span>
-                  <button onClick={() => updateExercise(index, "rest_seconds", ex.rest_seconds + 15)} className="w-8 h-8 rounded-full bg-gray-700 hover:bg-gray-600 flex items-center justify-center">+</button>
+                  <button onClick={() => updateExercise(index, "rest_seconds", ex.rest_seconds + 15)} className="w-8 h-8 rounded-full bg-[#1a1d2e] hover:bg-[#252840] border border-white/10 flex items-center justify-center active:scale-95 transition-transform">+</button>
                 </div>
               </div>
 
               {index > 0 && (
                 <div className="flex justify-between items-center">
                   <div>
-                    <p className="text-gray-300">Superset</p>
-                    <p className="text-gray-500 text-sm">
+                    <p className="text-[#94a3b8]">Superset</p>
+                    <p className="text-[#64748b] text-sm">
                       {ex.superset_with != null
                         ? `Paired with Exercise ${index} · rest synced`
                         : `Pair with Exercise ${index}`}
@@ -231,7 +231,7 @@ function WorkoutSetupInner() {
                   </div>
                   <button
                     onClick={() => toggleSuperset(index)}
-                    className={`w-12 h-6 rounded-full transition ${ex.superset_with != null ? "bg-green-500" : "bg-gray-700"}`}
+                    className={`w-12 h-6 rounded-full transition ${ex.superset_with != null ? "bg-blue-500" : "bg-[#1a1d2e] border border-white/10"}`}
                   >
                     <div className={`w-5 h-5 bg-white rounded-full transition-transform mx-0.5 ${ex.superset_with != null ? "translate-x-6" : ""}`} />
                   </button>
@@ -242,7 +242,7 @@ function WorkoutSetupInner() {
 
           <button
             onClick={addExercise}
-            className="w-full border border-gray-700 hover:border-gray-500 text-gray-400 hover:text-white py-3 rounded-xl transition"
+            className="w-full border border-blue-500/40 hover:border-blue-500 text-[#64748b] hover:text-blue-400 py-3 rounded-xl transition active:scale-95"
           >
             + Add Exercise
           </button>
@@ -256,7 +256,7 @@ function WorkoutSetupInner() {
           <button
             onClick={handleSave}
             disabled={!workoutName.trim() || saving}
-            className="w-full bg-green-500 hover:bg-green-400 disabled:opacity-50 text-black font-bold py-4 rounded-xl text-lg transition"
+            className="w-full bg-blue-500 hover:bg-blue-400 disabled:opacity-50 text-white font-bold py-4 rounded-xl text-lg transition active:scale-95"
           >
             {saving ? "Saving..." : isEditing ? "Update Workout →" : "Save Workout →"}
           </button>
