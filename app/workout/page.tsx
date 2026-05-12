@@ -165,20 +165,16 @@ function WorkoutInner() {
           const data = await res.json();
           const results: any[] = Array.isArray(data.search) ? data.search : [];
           console.log(`[GetSongBPM] "${title}" → ${results.length} results, artists: [${results.map((r) => r.artist?.title).join(', ')}]`);
-          if (artistLower) {
-            const artistMatch = results.find((r) => r.artist?.title?.toLowerCase().includes(artistLower));
-            // If some results have artist data but none matched, it's a genuine mismatch — bail.
-            // If NO results have artist data, fall through to first-result fallback.
-            const anyHasArtist = results.some((r) => !!r.artist?.title);
-            if (!artistMatch && anyHasArtist) return null;
-            const pick = artistMatch ?? results[0];
-            if (!pick) return null;
-            const bpm = parseFloat(String(pick.tempo));
-            return isNaN(bpm) ? null : { bpm, matchedArtist: pick.artist?.title ?? 'unknown' };
-          }
-          const first = results[0];
-          const bpm = parseFloat(String(first?.tempo));
-          return first && !isNaN(bpm) ? { bpm, matchedArtist: first.artist?.title ?? 'unknown' } : null;
+          // Always require a confirmed artist match — never accept unverified results.
+          const match = results.find((r) => {
+            const resultArtist = r.artist?.title?.toLowerCase() ?? '';
+            return resultArtist && artistLower
+              ? resultArtist.includes(artistLower) || artistLower.includes(resultArtist)
+              : false;
+          });
+          if (!match) return null;
+          const bpm = parseFloat(String(match.tempo));
+          return isNaN(bpm) ? null : { bpm, matchedArtist: match.artist?.title ?? 'unknown' };
         } catch (err) {
           console.log(`[GetSongBPM] threw for "${title}":`, err);
           return null;
