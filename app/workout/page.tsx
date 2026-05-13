@@ -302,24 +302,11 @@ function WorkoutInner() {
           headers: { Authorization: `Bearer ${session.accessToken}` },
         })
           .then((r) => (r.ok ? r.json() : null))
-          .then((qData) => {
+          .then(async (qData) => {
             const upcoming: any[] = (qData?.queue ?? []).slice(0, 5);
 
-            // Log queue with current BPM knowledge
-            const snapshot = [...playlistBpmRef.current.high, ...playlistBpmRef.current.low];
-            console.log('[Queue] Next 5 songs:', upcoming.map((t: any, i: number) => {
-              const bpm = snapshot.find((b) => b.id === t.id)?.bpm ?? null;
-              return {
-                '#': i + 1,
-                name: t.name,
-                artist: t.artists?.[0]?.name ?? '?',
-                bpm: bpm ?? 'unknown',
-                category: bpm != null ? (bpm >= HIGH_BPM_CUTOFF ? 'HIGH' : 'LOW') : 'UNKNOWN',
-              };
-            }));
-
-            // Dynamically fetch Songstats BPM for current track + queue tracks not yet cached
-            const knownIds = new Set(snapshot.map((t) => t.id));
+            // 1. Dynamically fetch Songstats BPM for current track + queue tracks not yet cached
+            const knownIds = new Set([...playlistBpmRef.current.high, ...playlistBpmRef.current.low].map((t) => t.id));
             const toLoad = [
               ...(currentTrackMeta && !knownIds.has(currentTrackMeta.id) ? [currentTrackMeta] : []),
               ...upcoming
@@ -331,27 +318,40 @@ function WorkoutInner() {
                 })),
             ];
 
-            if (toLoad.length === 0) return;
+            if (toLoad.length > 0) {
+              console.log(`[BPM] Dynamic load: fetching Songstats for ${toLoad.length} new tracks`);
+              try {
+                const r = await fetch("/api/playlist-bpm", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ tracks: toLoad }),
+                });
+                const result = r.ok ? await r.json() : null;
+                if (result) {
+                  playlistBpmRef.current = {
+                    high: [...playlistBpmRef.current.high, ...(result.high ?? [])],
+                    low:  [...playlistBpmRef.current.low,  ...(result.low  ?? [])],
+                  };
+                  console.log(
+                    `[BPM] +${result.high?.length ?? 0} HIGH, +${result.low?.length ?? 0} LOW`,
+                    `| buckets now: ${playlistBpmRef.current.high.length} HIGH / ${playlistBpmRef.current.low.length} LOW`,
+                  );
+                }
+              } catch { /* ignore */ }
+            }
 
-            console.log(`[BPM] Dynamic load: fetching Songstats for ${toLoad.length} new tracks`);
-            fetch("/api/playlist-bpm", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ tracks: toLoad }),
-            })
-              .then((r) => (r.ok ? r.json() : null))
-              .then((result) => {
-                if (!result) return;
-                playlistBpmRef.current = {
-                  high: [...playlistBpmRef.current.high, ...(result.high ?? [])],
-                  low:  [...playlistBpmRef.current.low,  ...(result.low  ?? [])],
-                };
-                console.log(
-                  `[BPM] +${result.high?.length ?? 0} HIGH, +${result.low?.length ?? 0} LOW`,
-                  `| buckets now: ${playlistBpmRef.current.high.length} HIGH / ${playlistBpmRef.current.low.length} LOW`,
-                );
-              })
-              .catch(() => {});
+            // 2. Log queue with accurate BPM (after fetch completes)
+            const snapshot = [...playlistBpmRef.current.high, ...playlistBpmRef.current.low];
+            console.log('[Queue] Next 5 songs:', upcoming.map((t: any, i: number) => {
+              const bpm = snapshot.find((b) => b.id === t.id)?.bpm ?? null;
+              return {
+                '#': i + 1,
+                name: t.name,
+                artist: t.artists?.[0]?.name ?? '?',
+                bpm: bpm ?? 'unknown',
+                category: bpm != null ? (bpm >= HIGH_BPM_CUTOFF ? 'HIGH' : 'LOW') : 'UNKNOWN',
+              };
+            }));
           })
           .catch(() => {});
       }
