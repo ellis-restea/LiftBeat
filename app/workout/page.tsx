@@ -249,9 +249,12 @@ function WorkoutInner() {
             ];
             allTracks.push(...tagged);
             console.log(
-              `[PlaylistBPM] ${pid} → ${result.high?.length ?? 0} HIGH, ${result.low?.length ?? 0} LOW`,
+              `[PlaylistBPM] ${pid} → HIGH: ${result.high?.length ?? 0}, LOW: ${result.low?.length ?? 0}, UNKNOWN: ${result.unknown?.length ?? 0}`,
               `| cache: ${result.fromCache}, fresh: ${result.fromApi}`
             );
+            if ((result.unknown?.length ?? 0) > 0) {
+              console.warn(`[PlaylistBPM] ${result.unknown.length} tracks have no BPM data — they won't be played`);
+            }
           } catch (err) {
             console.log(`[PlaylistBPM] Error for ${pid}:`, err);
           }

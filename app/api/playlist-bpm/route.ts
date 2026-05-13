@@ -4,6 +4,51 @@ import { createClient } from "@supabase/supabase-js";
 const HIGH_BPM_CUTOFF = 120;
 const BATCH_SIZE = 8;
 
+// ── GetSongBPM fallback ────────────────────────────────────────────────────
+// Used when Songstats has no tempo data for a track (poor coverage of niche/
+// regional music). Searches by track name, requires confirmed artist match.
+
+function artistsMatch(resultArtist: string, trackArtists: string[]): boolean {
+  const ra = resultArtist.toLowerCase();
+  return trackArtists.some((a) => {
+    const al = a.toLowerCase();
+    return ra.includes(al) || al.includes(ra);
+  });
+}
+
+async function searchGetSongBpm(lookup: string, artistNames: string[], apiKey: string): Promise<number | null> {
+  try {
+    const res = await fetch(
+      `https://api.getsong.co/search/?api_key=${apiKey}&type=song&lookup=${encodeURIComponent(lookup)}`
+    );
+    if (!res.ok) return null;
+    const data = await res.json();
+    const results: any[] = data?.search?.data ?? data?.data ?? [];
+    for (const r of results) {
+      const artistStr: string =
+        r?.artist?.title ?? r?.artist?.name ?? r?.artist_name ??
+        (typeof r?.artist === "string" ? r.artist : null) ?? "";
+      if (artistStr && artistsMatch(artistStr, artistNames)) {
+        const bpm = parseFloat(r?.tempo ?? r?.bpm ?? "");
+        return isNaN(bpm) ? null : bpm;
+      }
+    }
+  } catch { /* non-fatal */ }
+  return null;
+}
+
+async function fetchGetSongBpm(name: string, artists: string[], apiKey: string): Promise<number | null> {
+  // Step 1: full track name
+  let bpm = await searchGetSongBpm(name, artists, apiKey);
+  if (bpm !== null) return bpm;
+  // Step 2: strip trailing "- suffix" / "(suffix)" and retry
+  const stripped = name.replace(/\s*[\(\[].*$/, "").replace(/\s*-\s+.+$/, "").trim();
+  if (stripped && stripped !== name) {
+    bpm = await searchGetSongBpm(stripped, artists, apiKey);
+  }
+  return bpm;
+}
+
 export interface TrackBpm {
   id: string;
   name: string;
@@ -142,6 +187,37 @@ export async function POST(req: NextRequest) {
       // (null features = HTTP error; caching them would permanently block re-fetching)
       if (features !== null) {
         freshRows.push({ spotify_track_id: id, bpm, ...features });
+      }
+    }
+  }
+
+  // 2b. Fallback to GetSongBPM for tracks Songstats couldn't find
+  const getsongKey = process.env.NEXT_PUBLIC_GETSONGBPM_KEY;
+  if (getsongKey) {
+    const stillUnknown = uniqueTracks.filter((t) => bpmMap.get(t.id) === null || !bpmMap.has(t.id));
+    if (stillUnknown.length > 0) {
+      console.log(`[GetSongBPM] Trying fallback for ${stillUnknown.length} tracks`);
+      for (const track of stillUnknown) {
+        const bpm = await fetchGetSongBpm(track.name, track.artists, getsongKey);
+        if (bpm !== null) {
+          bpmMap.set(track.id, bpm);
+          // Update existing freshRow if Songstats already added one (to avoid duplicate key in upsert)
+          const existingIdx = freshRows.findIndex((r) => r.spotify_track_id === track.id);
+          if (existingIdx >= 0) {
+            freshRows[existingIdx] = { ...freshRows[existingIdx], bpm, tempo: bpm };
+          } else {
+            freshRows.push({
+              spotify_track_id: track.id,
+              bpm,
+              acousticness: null, danceability: null, duration: null, energy: null,
+              instrumentalness: null, key: null, liveness: null, loudness: null,
+              mode: null, speechiness: null, tempo: bpm, time_signature: null, valence: null,
+            });
+          }
+          console.log(`[GetSongBPM] "${track.name}" → ${bpm} BPM`);
+        }
+        // Small delay to avoid rate limiting
+        await new Promise((r) => setTimeout(r, 80));
       }
     }
   }
