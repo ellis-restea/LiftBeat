@@ -139,11 +139,14 @@ function WorkoutInner() {
               continue;
             }
             const result = await res.json();
+            if (result.debug) {
+              console.log(`[PlaylistBPM] ${pid} debug:`, result.debug);
+            }
             allHigh.push(...(result.high ?? []));
             allLow.push(...(result.low ?? []));
             console.log(
               `[PlaylistBPM] ${pid} → HIGH: ${result.high?.length}, LOW: ${result.low?.length}, UNKNOWN: ${result.unknown?.length}`,
-              `| cache: ${result.fromCache}/${result.total}, fresh from Songstats: ${result.fromApi}`
+              `| total: ${result.total}, cache: ${result.fromCache}, fresh: ${result.fromApi}`
             );
           } catch (err) {
             console.log(`[PlaylistBPM] Error fetching ${pid}:`, err);

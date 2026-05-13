@@ -57,26 +57,34 @@ async function fetchSongstatsBpm(spotifyId: string, apiKey: string, logFull = fa
 
 // ── Spotify playlist fetch (with pagination) ───────────────────────────────
 
-async function fetchAllPlaylistTracks(playlistId: string, accessToken: string): Promise<any[]> {
+async function fetchAllPlaylistTracks(
+  playlistId: string,
+  accessToken: string
+): Promise<{ tracks: any[]; spotifyStatus: number; spotifyError: string | null }> {
   const tracks: any[] = [];
   let url: string | null = `https://api.spotify.com/v1/playlists/${playlistId}/tracks?limit=100`;
+  let firstStatus = 0;
+  let firstError: string | null = null;
 
   while (url) {
     const res = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
+    if (firstStatus === 0) firstStatus = res.status;
     console.log(`[PlaylistBPM] Spotify playlist page → HTTP ${res.status}`);
     if (!res.ok) {
       const body = await res.text().catch(() => "");
-      console.log(`[PlaylistBPM] Spotify error body:`, body.slice(0, 300));
+      firstError = body.slice(0, 300);
+      console.log(`[PlaylistBPM] Spotify error body:`, firstError);
       break;
     }
     const data = await res.json();
+    console.log(`[PlaylistBPM] Page items: ${data.items?.length ?? 0}, next: ${data.next ? 'yes' : 'no'}`);
     for (const item of data.items ?? []) {
       if (item?.track?.id) tracks.push(item.track);
     }
     url = data.next ?? null;
   }
 
-  return tracks;
+  return { tracks, spotifyStatus: firstStatus, spotifyError: firstError };
 }
 
 // ── Route handler ──────────────────────────────────────────────────────────
@@ -98,10 +106,13 @@ export async function GET(req: NextRequest) {
   );
 
   // 1. Fetch all tracks from the Spotify playlist
-  const spotifyTracks = await fetchAllPlaylistTracks(playlistId, accessToken);
+  const { tracks: spotifyTracks, spotifyStatus, spotifyError } = await fetchAllPlaylistTracks(playlistId, accessToken);
   if (!spotifyTracks.length) {
     console.log("[PlaylistBPM] No tracks returned from Spotify for playlist:", playlistId);
-    return NextResponse.json({ high: [], low: [], unknown: [], total: 0, fromCache: 0, fromApi: 0 });
+    return NextResponse.json({
+      high: [], low: [], unknown: [], total: 0, fromCache: 0, fromApi: 0,
+      debug: { spotifyStatus, spotifyError },
+    });
   }
 
   // Deduplicate by ID (same track can appear multiple times in a playlist)
