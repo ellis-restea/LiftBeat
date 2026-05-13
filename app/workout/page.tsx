@@ -132,6 +132,9 @@ function WorkoutInner() {
   const playlistBpmRef = useRef<{ high: TrackBpm[]; low: TrackBpm[] }>({ high: [], low: [] });
   // Sorted playlist IDs currently loaded — re-run preload when selection changes
   const loadedPlaylistIdsRef = useRef<string>("");
+  // All track IDs that belong to a currently-selected playlist (populated by preload).
+  // Used for membership verification — immune to dynamic-load tracks that lack playlistId.
+  const selectedTrackIdsRef = useRef<Set<string>>(new Set());
   // Track IDs queued recently — prevents immediate replays (capped at 30)
   const recentlyQueuedRef = useRef<Set<string>>(new Set());
   // Prevents concurrent ensureTrackEnergy calls from the polling loop
@@ -189,7 +192,8 @@ function WorkoutInner() {
         if (loadedPlaylistIdsRef.current === sortedKey) return; // same selection already loaded
         loadedPlaylistIdsRef.current = sortedKey;
         playlistBpmRef.current = { high: [], low: [] }; // clear stale buckets from old selection
-        recentlyQueuedRef.current.clear(); // reset replay history for new selection
+        selectedTrackIdsRef.current = new Set();         // clear membership set for new selection
+        recentlyQueuedRef.current.clear();               // reset replay history for new selection
         console.log(`[PlaylistBPM] Loading BPM data for ${playlistIds.length} playlist(s):`, playlistIds);
 
         // Silently check Spotify context — runs before the slow BPM loading loop
@@ -232,6 +236,8 @@ function WorkoutInner() {
             }
             console.log(`[PlaylistBPM] Client fetched ${tracks.length} tracks from ${pid}`);
             if (!tracks.length) continue;
+            // Register all track IDs as belonging to a selected playlist
+            for (const t of tracks) selectedTrackIdsRef.current.add(t.id);
 
             // Step 2: POST track list to server — server only does Songstats + Supabase cache
             const res = await fetch("/api/playlist-bpm", {
@@ -460,20 +466,22 @@ function WorkoutInner() {
             }));
 
             // 3. Verify current track belongs to a selected playlist and has the right energy.
-            // Runs on every track change while workout is active — steers away if wrong.
+            // selectedTrackIdsRef is the source of truth — it's populated from the preload
+            // by track ID, so it works even for tracks that were dynamically BPM-loaded
+            // (which lack playlistId and would incorrectly fail a playlistId != null check).
             const ws = workoutStateRef.current;
             if (ws !== "idle" && ws !== "done" && !isSteeringRef.current) {
-              const entry = snapshot.find((t) => t.id === newId);
-              const fromSelectedPlaylist = entry?.playlistId != null;
+              const fromSelectedPlaylist = selectedTrackIdsRef.current.has(newId);
               const wantHigh = ws === "warmup" || ws === "exercising";
 
               if (!fromSelectedPlaylist) {
                 console.log(`[Playlist] "${data?.item?.name}" — not from a selected playlist — steering`);
                 ensureTrackEnergyRef.current(wantHigh);
               } else {
-                const bpmOk = entry!.bpm != null && (entry!.bpm >= HIGH_BPM_CUTOFF) === wantHigh;
+                const entry = snapshot.find((t) => t.id === newId);
+                const bpmOk = entry?.bpm != null && (entry.bpm >= HIGH_BPM_CUTOFF) === wantHigh;
                 if (!bpmOk) {
-                  console.log(`[Playlist] "${data?.item?.name}" — wrong BPM for state ${ws} — steering`);
+                  console.log(`[Playlist] "${data?.item?.name}" (${entry?.bpm ?? "unknown"} BPM) — wrong energy for state ${ws} — steering`);
                   ensureTrackEnergyRef.current(wantHigh);
                 }
               }
