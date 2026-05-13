@@ -1,6 +1,6 @@
 "use client";
 import { useSearchParams, useRouter } from "next/navigation";
-import { useSession } from "next-auth/react";
+import { useSession, signOut } from "next-auth/react";
 import { useEffect, useState, useCallback, useRef, Suspense } from "react";
 import { supabase } from "@/lib/supabase";
 import { feedback } from "@/lib/feedback";
@@ -37,15 +37,18 @@ function formatMs(ms: number) {
 
 const HIGH_BPM_CUTOFF = 120;
 
-// Fetch all tracks from a Spotify playlist client-side (avoids 403 from server-side token forwarding)
+// Fetch all tracks from a Spotify playlist client-side.
+// Returns { tracks, firstStatus } so callers can detect scope errors (403).
 async function fetchClientPlaylistTracks(
   playlistId: string,
   accessToken: string
-): Promise<{ id: string; name: string; artists: string[] }[]> {
+): Promise<{ tracks: { id: string; name: string; artists: string[] }[]; firstStatus: number }> {
   const tracks: { id: string; name: string; artists: string[] }[] = [];
   let url: string | null = `https://api.spotify.com/v1/playlists/${playlistId}/tracks?limit=100`;
+  let firstStatus = 0;
   while (url) {
     const res = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
+    if (firstStatus === 0) firstStatus = res.status;
     console.log(`[PlaylistBPM] Client Spotify fetch → HTTP ${res.status}`);
     if (!res.ok) break;
     const data = await res.json();
@@ -60,7 +63,7 @@ async function fetchClientPlaylistTracks(
     }
     url = data.next ?? null;
   }
-  return tracks;
+  return { tracks, firstStatus };
 }
 
 export default function Workout() {
@@ -158,7 +161,13 @@ function WorkoutInner() {
         for (const pid of playlistIds) {
           try {
             // Step 1: fetch tracks client-side (session already has playlist scopes)
-            const tracks = await fetchClientPlaylistTracks(pid, session.accessToken);
+            const { tracks, firstStatus } = await fetchClientPlaylistTracks(pid, session.accessToken);
+            if (firstStatus === 403) {
+              // Token was issued before playlist-read-private scope was added — force re-auth
+              console.log('[PlaylistBPM] 403 on playlist fetch — missing playlist scope. Re-authenticating...');
+              signOut({ callbackUrl: '/' });
+              return;
+            }
             console.log(`[PlaylistBPM] Client fetched ${tracks.length} tracks from ${pid}`);
             if (!tracks.length) continue;
 
