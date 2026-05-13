@@ -67,18 +67,23 @@ async function fetchClientPlaylistTracks(
   return { tracks, firstStatus };
 }
 
-// Pick a track from a BPM bucket, avoiding recently-queued tracks and distributing
-// evenly across playlists (one random playlist first, then a random track from it).
+// Pick a track from a BPM bucket.
+// - Only picks tracks that have a playlistId (verified as belonging to a selected playlist).
+// - Avoids recently-queued tracks; falls back to full verified set if all were recent.
+// - Distributes evenly across playlists: pick a random playlist first, then a random track.
 function pickFromBucket(bucket: TrackBpm[], exclude: Set<string>): TrackBpm | null {
   if (bucket.length === 0) return null;
-  const eligible = bucket.filter((t) => !exclude.has(t.id));
-  const pool = eligible.length > 0 ? eligible : bucket; // fall back if everything recently played
+  // Only consider tracks confirmed to be from a selected playlist
+  const verified = bucket.filter((t) => t.playlistId != null);
+  if (verified.length === 0) return null;
+
+  const eligible = verified.filter((t) => !exclude.has(t.id));
+  const pool = eligible.length > 0 ? eligible : verified; // fall back if all recently played
 
   const byPlaylist = new Map<string, TrackBpm[]>();
   for (const t of pool) {
-    const key = t.playlistId ?? "unknown";
-    if (!byPlaylist.has(key)) byPlaylist.set(key, []);
-    byPlaylist.get(key)!.push(t);
+    if (!byPlaylist.has(t.playlistId!)) byPlaylist.set(t.playlistId!, []);
+    byPlaylist.get(t.playlistId!)!.push(t);
   }
   const playlists = [...byPlaylist.keys()];
   const chosen = playlists[Math.floor(Math.random() * playlists.length)];
@@ -129,6 +134,8 @@ function WorkoutInner() {
   const loadedPlaylistIdsRef = useRef<string>("");
   // Track IDs queued recently — prevents immediate replays (capped at 30)
   const recentlyQueuedRef = useRef<Set<string>>(new Set());
+  // Prevents concurrent ensureTrackEnergy calls from the polling loop
+  const isSteeringRef = useRef(false);
   // Playlist URI to switch to on Start Workout (null = context already correct)
   const pendingPlaylistContextRef = useRef<string | null>(null);
 
@@ -280,6 +287,9 @@ function WorkoutInner() {
   //    This ensures the next song always comes from the right playlist + energy tier.
   const ensureTrackEnergy = useCallback(async (wantHigh: boolean) => {
     if (!session?.accessToken) return;
+    if (isSteeringRef.current) return; // already steering — don't stack calls
+    isSteeringRef.current = true;
+    try {
     for (let attempt = 0; attempt < 5; attempt++) {
       const res = await spotifyFetch("https://api.spotify.com/v1/me/player/currently-playing", {
         headers: { Authorization: `Bearer ${session.accessToken}` },
@@ -349,6 +359,9 @@ function WorkoutInner() {
         headers: { Authorization: `Bearer ${session.accessToken}` },
       });
       await new Promise((resolve) => setTimeout(resolve, 700));
+    }
+    } finally {
+      isSteeringRef.current = false;
     }
     lastCommandRef.current = 0;
     fetchCurrentTrackRef.current();
@@ -445,6 +458,26 @@ function WorkoutInner() {
                 category: bpm != null ? (bpm >= HIGH_BPM_CUTOFF ? 'HIGH' : 'LOW') : 'UNKNOWN',
               };
             }));
+
+            // 3. Verify current track belongs to a selected playlist and has the right energy.
+            // Runs on every track change while workout is active — steers away if wrong.
+            const ws = workoutStateRef.current;
+            if (ws !== "idle" && ws !== "done" && !isSteeringRef.current) {
+              const entry = snapshot.find((t) => t.id === newId);
+              const fromSelectedPlaylist = entry?.playlistId != null;
+              const wantHigh = ws === "warmup" || ws === "exercising";
+
+              if (!fromSelectedPlaylist) {
+                console.log(`[Playlist] "${data?.item?.name}" — not from a selected playlist — steering`);
+                ensureTrackEnergyRef.current(wantHigh);
+              } else {
+                const bpmOk = entry!.bpm != null && (entry!.bpm >= HIGH_BPM_CUTOFF) === wantHigh;
+                if (!bpmOk) {
+                  console.log(`[Playlist] "${data?.item?.name}" — wrong BPM for state ${ws} — steering`);
+                  ensureTrackEnergyRef.current(wantHigh);
+                }
+              }
+            }
           })
           .catch(() => {});
       }
@@ -468,6 +501,14 @@ function WorkoutInner() {
   useEffect(() => {
     if (session?.accessToken) fetchCurrentTrack();
   }, [fetchCurrentTrack]);
+
+  // Poll every 5 s during active workout states to detect natural song changes
+  // and verify the playing track belongs to a selected playlist.
+  useEffect(() => {
+    if (!session?.accessToken || workoutState === "idle" || workoutState === "done") return;
+    const id = setInterval(() => fetchCurrentTrackRef.current(), 5000);
+    return () => clearInterval(id);
+  }, [session?.accessToken, workoutState]);
 
   // Rest timer — counts down, switches to exercising and steers BPM when done.
   useEffect(() => {
