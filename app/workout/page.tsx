@@ -300,7 +300,14 @@ function WorkoutInner() {
               upcoming.map(async (t: any) => {
                 const bpm = t?.id ? await getTrackBpm(t.id, t.name, t.artists?.[0]?.name) : null;
                 const api = t?.id ? (bpmSourceCacheRef.current.get(t.id) ?? 'unknown') : 'unknown';
-                return { name: t?.name, bpm, api };
+                let songstats: any = null;
+                if (t?.id) {
+                  try {
+                    const ssRes = await fetch(`/api/songstats/track?id=${t.id}`);
+                    songstats = await ssRes.json();
+                  } catch {}
+                }
+                return { name: t?.name, spotifyId: t?.id ?? null, bpm, api, songstats };
               })
             ).then((queueTracks) => {
               console.log('[BPM] Queue analysis:', queueTracks.map((t) => ({
@@ -308,6 +315,9 @@ function WorkoutInner() {
                 bpm: t.bpm,
                 category: t.bpm != null ? (t.bpm >= HIGH_BPM_CUTOFF ? 'HIGH' : 'LOW') : 'UNKNOWN',
                 api: t.api,
+                spotifyId: t.spotifyId,
+                spotifyEndpoint: t.spotifyId ? `https://api.spotify.com/v1/tracks/${t.spotifyId}` : null,
+                songstats: t.songstats,
               })));
             });
           })
