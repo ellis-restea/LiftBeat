@@ -16,6 +16,13 @@ interface Exercise {
   superset_with: number | null;
 }
 
+interface TrackBpm {
+  id: string;
+  name: string;
+  artists: string[];
+  bpm: number | null;
+}
+
 type WorkoutState = "idle" | "warmup" | "exercising" | "resting" | "done";
 
 function formatTime(seconds: number) {
@@ -69,6 +76,9 @@ function WorkoutInner() {
   const rateLimitUntilRef = useRef<number>(0);
   const workoutStateRef = useRef<WorkoutState>("idle");
   const fetchCurrentTrackRef = useRef<() => Promise<void>>(async () => {});
+  // Playlist BPM buckets — populated in background on mount via Songstats
+  const playlistBpmRef = useRef<{ high: TrackBpm[]; low: TrackBpm[] }>({ high: [], low: [] });
+  const playlistBpmLoadedRef = useRef(false);
 
   const currentExercise = exercises[currentExerciseIndex];
   const totalSets = exercises.reduce((acc, ex) => acc + ex.sets, 0);
@@ -95,6 +105,59 @@ function WorkoutInner() {
         setLoading(false);
       });
   }, [workoutId]);
+
+  // Pre-load BPM buckets from Songstats (via Supabase cache) for all saved playlists.
+  // Runs once when session is available; results stored in playlistBpmRef for the queue system.
+  useEffect(() => {
+    if (!session?.accessToken || !session?.user?.name || playlistBpmLoadedRef.current) return;
+    playlistBpmLoadedRef.current = true;
+
+    const userId = session.user.name;
+
+    supabase
+      .from("user_playlists")
+      .select("playlist_ids")
+      .eq("user_id", userId)
+      .single()
+      .then(async ({ data, error }) => {
+        if (error || !data?.playlist_ids?.length) {
+          console.log("[PlaylistBPM] No saved playlists found for user:", userId);
+          return;
+        }
+
+        const playlistIds: string[] = data.playlist_ids;
+        console.log(`[PlaylistBPM] Loading BPM data for ${playlistIds.length} playlist(s):`, playlistIds);
+
+        const allHigh: TrackBpm[] = [];
+        const allLow: TrackBpm[] = [];
+
+        for (const pid of playlistIds) {
+          try {
+            const res = await fetch(`/api/playlist-bpm?playlist_id=${pid}`, {
+              headers: { Authorization: `Bearer ${session.accessToken}` },
+            });
+            if (!res.ok) {
+              console.log(`[PlaylistBPM] HTTP ${res.status} for playlist ${pid}`);
+              continue;
+            }
+            const result = await res.json();
+            allHigh.push(...(result.high ?? []));
+            allLow.push(...(result.low ?? []));
+            console.log(
+              `[PlaylistBPM] ${pid} → HIGH: ${result.high?.length}, LOW: ${result.low?.length}, UNKNOWN: ${result.unknown?.length}`,
+              `| cache: ${result.fromCache}/${result.total}, fresh from Songstats: ${result.fromApi}`
+            );
+          } catch (err) {
+            console.log(`[PlaylistBPM] Error fetching ${pid}:`, err);
+          }
+        }
+
+        playlistBpmRef.current = { high: allHigh, low: allLow };
+        console.log(
+          `[PlaylistBPM] Buckets ready — HIGH: ${allHigh.length} tracks, LOW: ${allLow.length} tracks`
+        );
+      });
+  }, [session]);
 
   // Global Spotify fetch wrapper — blocks all calls while rate-limited, sets the
   // global cooldown on any 429 response so every endpoint is paused together.
