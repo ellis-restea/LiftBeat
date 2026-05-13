@@ -1,6 +1,6 @@
 "use client";
 import { useSearchParams, useRouter } from "next/navigation";
-import { useSession, signOut } from "next-auth/react";
+import { useSession } from "next-auth/react";
 import { useEffect, useState, useCallback, useRef, Suspense } from "react";
 import { supabase } from "@/lib/supabase";
 import { feedback } from "@/lib/feedback";
@@ -163,10 +163,8 @@ function WorkoutInner() {
             // Step 1: fetch tracks client-side (session already has playlist scopes)
             const { tracks, firstStatus } = await fetchClientPlaylistTracks(pid, session.accessToken);
             if (firstStatus === 403) {
-              // Token was issued before playlist-read-private scope was added — force re-auth
-              console.log('[PlaylistBPM] 403 on playlist fetch — missing playlist scope. Re-authenticating...');
-              signOut({ callbackUrl: '/' });
-              return;
+              console.log('[PlaylistBPM] 403 on playlist fetch — missing playlist-read-private scope. Sign out and back in to fix.');
+              continue;
             }
             console.log(`[PlaylistBPM] Client fetched ${tracks.length} tracks from ${pid}`);
             if (!tracks.length) continue;
