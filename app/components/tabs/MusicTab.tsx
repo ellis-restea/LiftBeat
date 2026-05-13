@@ -2,6 +2,7 @@
 import { useSession } from "next-auth/react";
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import { prefetchPlaylistsBpm } from "@/lib/prefetchBpm";
 import { feedback } from "@/lib/feedback";
 
 interface Props { onDone: () => void; }
@@ -58,6 +59,10 @@ export default function MusicTab({ onDone }: Props) {
     await supabase
       .from("user_playlists")
       .upsert({ user_id: session.user.name, playlist_ids: selected }, { onConflict: "user_id" });
+
+    // Kick off BPM prefetch in background — don't await so the save confirmation shows immediately
+    prefetchPlaylistsBpm(selected, session.accessToken!);
+
     setSaving(false);
     setSaved(true);
     setTimeout(() => {

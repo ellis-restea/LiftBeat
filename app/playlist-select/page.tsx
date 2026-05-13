@@ -3,6 +3,7 @@ import { useSession } from "next-auth/react";
 import { useEffect, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import { prefetchPlaylistsBpm } from "@/lib/prefetchBpm";
 import LoadingScreen from "../components/LoadingScreen";
 
 export default function PlaylistSelect() {
@@ -70,6 +71,9 @@ function PlaylistSelectInner() {
     await supabase
       .from("user_playlists")
       .upsert({ user_id: session.user.name, playlist_ids: selected }, { onConflict: "user_id" });
+
+    // Kick off BPM prefetch in background — don't await so navigation isn't blocked
+    prefetchPlaylistsBpm(selected, session.accessToken!);
 
     router.push(mode === "edit" ? "/dashboard" : "/workout-setup");
   };
