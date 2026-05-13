@@ -26,6 +26,8 @@ app/
   workout-setup/page.tsx   — Build workout (exercises, sets, reps, rest)
   workout/page.tsx         — Main workout screen
   api/auth/[...nextauth]/route.js — Spotify OAuth + token refresh
+  api/playlist-bpm/route.ts — Server route: Songstats BPM lookup + Supabase caching
+  api/songstats/track/route.ts — Debug route: single-track Songstats lookup
   components/
     AppShell.tsx        — SPA shell: manages tab state, persistent mounts, auth redirect, playlist check
     BottomNav.tsx       — Floating frosted-glass pill nav (320px, blur backdrop), sliding pill indicator
@@ -38,6 +40,7 @@ app/
 lib/
   supabase.ts           — Supabase client
   feedback.ts           — Sound (Web Audio API) + haptic (navigator.vibrate) feedback system
+  prefetchBpm.ts        — Fire-and-forget BPM prefetch after playlist save (called from MusicTab + playlist-select)
 types/
   next-auth.d.ts        — Session type extensions
 Environment Variables (.env.local):
@@ -47,17 +50,24 @@ NEXTAUTH_SECRET=
 NEXTAUTH_URL=http://127.0.0.1:3000
 NEXT_PUBLIC_SUPABASE_URL=
 NEXT_PUBLIC_SUPABASE_ANON_KEY=
+SONGSTATS_API_KEY=
+NEXT_PUBLIC_GETSONGBPM_KEY=   ← present but not currently used in code
 Spotify App Settings:
 
 Redirect URI: http://127.0.0.1:3000/api/auth/callback/spotify
 Scopes: user-read-private user-read-playback-state user-modify-playback-state playlist-read-private playlist-read-collaborative streaming
 
 Supabase Tables:
-sqlworkouts: id, user_id, name, created_at
+workouts: id, user_id, name, created_at
 exercises: id, workout_id, name, sets, reps, rest_seconds, order_index, superset_with
-
--- NEEDS TO BE ADDED:
 user_playlists: id, user_id, playlist_ids (text array), created_at
+track_bpm_cache: spotify_track_id, bpm, cached_at, acousticness, danceability, duration, energy,
+  instrumentalness, key, liveness, loudness, mode, speechiness, tempo, time_signature, valence
+
+IMPORTANT — Supabase migration required (run in SQL Editor if not done):
+  supabase/migrations/20260513_track_bpm_cache_fix_schema.sql
+  Adds all 13 audio feature columns + deletes null-bpm rows so they get re-fetched.
+
 User Flows:
 New user:
 Landing page → Onboarding (3 slides) → Spotify login → Playlist select (saved to Supabase) → Workout setup → Workout screen
@@ -71,47 +81,66 @@ Dashboard has a small pencil/edit icon that takes user back to playlist-select t
 Workout screen loads playlists from Supabase, not from URL params
 No payment screen for now — launch free to build user base, add subscription later once traction is gained
 
-App Logic:
+App Logic — Playback System (current: Option 2 custom queue):
 
-Spotify token auto-refreshes via NextAuth JWT callback
-Playlists fetched from Spotify, user selects one or more, saved to Supabase
-BPM detection: queue-based, no pre-loading. On state change, fetches currently-playing, looks up BPM, skips forward up to 5x until energy matches.
-BPM source priority: ReccoBeats → GetSongBPM → skip.
-  - ReccoBeats: GET /v1/track?ids={spotifyId} → UUID → GET /v1/track/{uuid}/audio-features → tempo
-  - GetSongBPM: GET https://api.getsong.co/search/?api_key={key}&type=song&lookup={trackName}
-      Step 1: search full track name, require confirmed artist match (bidirectional partial, case-insensitive)
-      Step 2: if no match, strip dash/paren suffixes (e.g. "Dakota - Decade In The Sun Version" → "Dakota") and retry
-      API key: NEXT_PUBLIC_GETSONGBPM_KEY env var
-      Artist field in API response varies — code tries: artist.title, artist.name, artist_name, artist (string)
-      Result only accepted if artist name is confirmed — never uses unverified first-result fallback
-Fixed BPM cutoff: 120 BPM. ≥120 = HIGH (exercising/warmup), <120 = LOW (resting).
-Tracks not found in either API are skipped (not accepted as unknown energy).
-BPM results cached in-memory (bpmCacheRef: Map<string, number|null>) for the session.
-BPM source cached in-memory (bpmSourceCacheRef: Map<string, string>) — values: 'ReccoBeats', 'GetSongBPM', 'unknown'.
-On track change: pre-warms BPM cache for next 6 tracks in queue (fire-and-forget).
-Queue analysis log includes: { name, bpm, category, api } — api shows which source found the BPM.
-Workout screen has 4 states: idle → warmup → exercising → resting
-Background color changes per state: dark (idle), amber (warmup), red (exercising), blue (resting)
-Rest timer counts down, auto-switches back to exercising when done
-Song progress bar polls Spotify every second
-Manual skip (⏭) triggers BPM check after 800ms — steers to correct energy for current state
-State change (Done with Set → resting): 500ms delay before BPM check so Spotify settles first
-Start Workout: 500ms delay before ensureTrackEnergy so Spotify registers the play command first
-noDevice banner only shown in idle state — 204 from currently-playing during active workout is ignored
+On workout start: pull all tracks from all selected playlists (client-side Spotify fetch),
+  POST to /api/playlist-bpm for BPM lookup, build trackPool (flat TrackBpm[] with playlistId + bpm).
+buildQueue(state, pool, excludeIds, count=10): filters by BPM bucket (HIGH ≥120 for warmup/exercise,
+  LOW <120 for rest), excludes played tracks, round-robin distributes across playlists, returns URIs.
+playForState(state): calls buildQueue + PUT /me/player/play with uris array — never uses context_uri.
+  State changes (Done with Set, rest timer end) call playForState directly with 500ms delay.
+Queue refill: fetchCurrentTrack detects when <5 tracks remain, calls PUT /play with offset+position_ms
+  to extend queue seamlessly without interrupting current song.
+playedIdsRef: Set of track IDs already played this workout — passed to buildQueue as excludeIds.
+deviceIdRef: cached on Start Workout, lazily resolved in playForState if null.
+loadedPlaylistIdsRef: sorted playlist ID string — prevents redundant preloads on same selection.
+BPM cutoff: 120. ≥120 = HIGH (exercising/warmup), <120 = LOW (resting).
+Workout states: idle → warmup → exercising → resting → done
+Glow overlays: amber (warmup), red (exercising), blue (resting), emerald (done)
+Rest timer counts down, auto-switches to exercising + calls playForState("exercising") when done.
+noDevice banner only shown in idle state — 204 from currently-playing during active workout is ignored.
 Spotify scopes: user-read-private user-read-playback-state user-modify-playback-state playlist-read-private playlist-read-collaborative streaming
-show_dialog: true on Spotify OAuth to always force consent screen (ensures latest scopes)
-GetSongBPM attribution footer present in: layout.tsx (server-rendered), dashboard, landing page, workout page
+show_dialog: true on Spotify OAuth to always force consent screen
+
+BPM Source:
+Primary: Songstats Enterprise API — GET /enterprise/v1/tracks/info?spotify_track_id={id}
+  Returns audio_analysis array of {key, value} strings. extractFeatures() parses all 13 keys.
+  API key: SONGSTATS_API_KEY env var (server-side only)
+  Logs all 13 features per track in server console when found.
+  Coverage gap: poor on regional/niche music (Romanian, etc.) — returns tempo: null for those tracks.
+Fallback: none currently — tracks with no Songstats data go to unknown bucket and are excluded from queue.
+Caching: Supabase track_bpm_cache table. Only caches rows where features !== null.
+  Null-bpm rows in cache are ignored on read so they get re-fetched.
+  Schema fix migration must be run (see above).
+
+BPM Prefetch: lib/prefetchBpm.ts — called fire-and-forget after playlist save in MusicTab and playlist-select.
+  Fetches all playlist tracks from Spotify, POSTs to /api/playlist-bpm to warm the cache.
 
 
-Known Issues / Limitations:
+Known Issues / Blockers:
 
-ReccoBeats has poor coverage of obscure/slowed/lo-fi tracks — falls through to GetSongBPM
-GetSongBPM artist field structure varies per response; code tries multiple field names
-user_playlists table in Supabase still needs to be created if not done yet (see table schema above)
+*** ACTIVE BLOCKER: 403 on GET /playlists/{id}/tracks ***
+The client-side Spotify fetch for playlist tracks returns 403 even after sign-out/sign-in.
+Code is correct (playlist-read-private is in auth config scopes on both initial auth and refresh).
+Root cause: unclear — token may not be receiving the scope despite re-auth.
+Pool stays at 0 → buildQueue returns empty → workout falls back to resuming whatever Spotify had playing.
 
+Possible fixes to try next session (in order):
+1. Revoke app access from Spotify account settings (spotify.com/account/apps) then re-authenticate —
+   this forces a completely fresh OAuth grant, not just a NextAuth signout.
+2. Decode the current access token (paste into jwt.io) and check the `scope` claim to confirm
+   whether playlist-read-private is actually present in the issued token.
+3. Move playlist track fetching to server-side (new API route uses session token server-side) —
+   avoids any client-side CORS or scope-delivery issue.
+4. Check if the specific playlist (2j8uGNFE19P4QbX88pr2hD) is private vs. public — try selecting
+   a known public playlist to isolate whether it's a scope issue or a playlist-ownership issue.
+5. Check Spotify Developer Dashboard app settings — confirm the redirect URI and scopes match exactly.
+6. The PUT /me/player/play 403 (second error) will resolve once the first is fixed and the queue
+   is non-empty. It may also indicate user-modify-playback-state is missing from the token.
 
 Upcoming Features (in priority order):
 
+BPM coverage for regional music (Songstats gap) — investigate alternative BPM sources or manual BPM entry
 BPM variety scanner — warn user if playlist lacks variety, recommend adding more
 Adaptive mode — user manually taps to switch high/low BPM, app learns timing over sessions
 Subscription payment (Stripe) — add after gaining traction, not at launch
@@ -128,7 +157,7 @@ App Name: LiftSync
 Design Language:
 
 Dark base: bg-[#0a0a0f] (very dark navy-black)
-Electric blue (#3b82f6) as primary accent — replaced all green accents
+Electric blue (#3b82f6) as primary accent
 card-metallic CSS utility: gradient surface + border + shadow
 State-based radial glow overlays on workout screen (amber/red/blue/emerald), 700ms opacity transition
 Primary buttons: solid blue, white text, active:scale-95
@@ -165,11 +194,7 @@ Color scheme: dark/moody base (bg-[#0a0a0f]), electric blue (#3b82f6) accent, st
 Done state: emerald glow + emerald button
 Exercising transition: 300ms (punchy), Resting transition: 700ms (slow calm fade)
 Full screen color wash transitions (radial glow overlays, not background-color swap)
-Start by fixing these in order: 1 superset logic, 2 save playlists to Supabase, 3 saved workout → direct to workout screen
-
 
 commit everything to GitHub with a descriptive message
 
-
-when to commit: Unit of Work: When you finish a single function, fix a bug, or complete a specific subtask.Working State: Every time your code is in a stable, buildable state.Before Risky Changes: Just before you attempt a major refactor or "try something out" that might break things.End of Session: At least once per day to ensure your local progress is backed up.
-
+when to commit: Unit of Work: When you finish a single function, fix a bug, or complete a specific subtask. Working State: Every time your code is in a stable, buildable state. Before Risky Changes: Just before you attempt a major refactor or "try something out" that might break things. End of Session: At least once per day to ensure your local progress is backed up.
