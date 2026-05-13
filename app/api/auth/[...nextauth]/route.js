@@ -38,6 +38,7 @@ const handler = NextAuth({
           body: new URLSearchParams({
             grant_type: "refresh_token",
             refresh_token: token.refreshToken,
+            scope: "user-read-private user-read-playback-state user-modify-playback-state playlist-read-private playlist-read-collaborative streaming",
           }),
         });
 
