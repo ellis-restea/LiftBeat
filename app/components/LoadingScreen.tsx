@@ -40,7 +40,7 @@ function randomOther(exclude: number, len: number) {
 }
 
 export default function LoadingScreen() {
-  const [msgIndex, setMsgIndex] = useState(() => Math.floor(Math.random() * MESSAGES.length));
+  const [msgIndex, setMsgIndex] = useState(0);
   const [starIndex, setStarIndex] = useState(0);
   const [msgTick, setMsgTick] = useState(0);
 
@@ -52,6 +52,8 @@ export default function LoadingScreen() {
   }, []);
 
   useEffect(() => {
+    // Randomize immediately on mount (safe — client only)
+    setMsgIndex(Math.floor(Math.random() * MESSAGES.length));
     const msgId = setInterval(() => {
       setMsgIndex((prev) => randomOther(prev, MESSAGES.length));
       setMsgTick((t) => t + 1);
