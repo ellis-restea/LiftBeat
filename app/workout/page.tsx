@@ -37,6 +37,32 @@ function formatMs(ms: number) {
 
 const HIGH_BPM_CUTOFF = 120;
 
+// Fetch all tracks from a Spotify playlist client-side (avoids 403 from server-side token forwarding)
+async function fetchClientPlaylistTracks(
+  playlistId: string,
+  accessToken: string
+): Promise<{ id: string; name: string; artists: string[] }[]> {
+  const tracks: { id: string; name: string; artists: string[] }[] = [];
+  let url: string | null = `https://api.spotify.com/v1/playlists/${playlistId}/tracks?limit=100`;
+  while (url) {
+    const res = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
+    console.log(`[PlaylistBPM] Client Spotify fetch → HTTP ${res.status}`);
+    if (!res.ok) break;
+    const data = await res.json();
+    for (const item of data.items ?? []) {
+      if (item?.track?.id) {
+        tracks.push({
+          id: item.track.id,
+          name: item.track.name,
+          artists: item.track.artists?.map((a: any) => a.name) ?? [],
+        });
+      }
+    }
+    url = data.next ?? null;
+  }
+  return tracks;
+}
+
 export default function Workout() {
   return <Suspense><WorkoutInner /></Suspense>;
 }
@@ -131,17 +157,22 @@ function WorkoutInner() {
 
         for (const pid of playlistIds) {
           try {
-            const res = await fetch(`/api/playlist-bpm?playlist_id=${pid}`, {
-              headers: { Authorization: `Bearer ${session.accessToken}` },
+            // Step 1: fetch tracks client-side (session already has playlist scopes)
+            const tracks = await fetchClientPlaylistTracks(pid, session.accessToken);
+            console.log(`[PlaylistBPM] Client fetched ${tracks.length} tracks from ${pid}`);
+            if (!tracks.length) continue;
+
+            // Step 2: POST track list to server — server only does Songstats + Supabase cache
+            const res = await fetch("/api/playlist-bpm", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ tracks }),
             });
             if (!res.ok) {
-              console.log(`[PlaylistBPM] HTTP ${res.status} for playlist ${pid}`);
+              console.log(`[PlaylistBPM] Server BPM lookup HTTP ${res.status} for ${pid}`);
               continue;
             }
             const result = await res.json();
-            if (result.debug) {
-              console.log(`[PlaylistBPM] ${pid} debug:`, result.debug);
-            }
             allHigh.push(...(result.high ?? []));
             allLow.push(...(result.low ?? []));
             console.log(
@@ -149,7 +180,7 @@ function WorkoutInner() {
               `| total: ${result.total}, cache: ${result.fromCache}, fresh: ${result.fromApi}`
             );
           } catch (err) {
-            console.log(`[PlaylistBPM] Error fetching ${pid}:`, err);
+            console.log(`[PlaylistBPM] Error for ${pid}:`, err);
           }
         }
 

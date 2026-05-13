@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
 const HIGH_BPM_CUTOFF = 120;
-// Process this many Songstats requests concurrently
 const BATCH_SIZE = 8;
 
 export interface TrackBpm {
@@ -38,7 +37,6 @@ async function fetchSongstatsBpm(spotifyId: string, apiKey: string, logFull = fa
       return null;
     }
     const data = await res.json();
-    // Log the full response once so we can verify the actual shape of the Songstats API
     if (logFull) {
       console.log(`[Songstats] Full raw response for ${spotifyId}:`, JSON.stringify(data));
     }
@@ -55,47 +53,17 @@ async function fetchSongstatsBpm(spotifyId: string, apiKey: string, logFull = fa
   }
 }
 
-// ── Spotify playlist fetch (with pagination) ───────────────────────────────
-
-async function fetchAllPlaylistTracks(
-  playlistId: string,
-  accessToken: string
-): Promise<{ tracks: any[]; spotifyStatus: number; spotifyError: string | null }> {
-  const tracks: any[] = [];
-  let url: string | null = `https://api.spotify.com/v1/playlists/${playlistId}/tracks?limit=100`;
-  let firstStatus = 0;
-  let firstError: string | null = null;
-
-  while (url) {
-    const res = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
-    if (firstStatus === 0) firstStatus = res.status;
-    console.log(`[PlaylistBPM] Spotify playlist page → HTTP ${res.status}`);
-    if (!res.ok) {
-      const body = await res.text().catch(() => "");
-      firstError = body.slice(0, 300);
-      console.log(`[PlaylistBPM] Spotify error body:`, firstError);
-      break;
-    }
-    const data = await res.json();
-    console.log(`[PlaylistBPM] Page items: ${data.items?.length ?? 0}, next: ${data.next ? 'yes' : 'no'}`);
-    for (const item of data.items ?? []) {
-      if (item?.track?.id) tracks.push(item.track);
-    }
-    url = data.next ?? null;
-  }
-
-  return { tracks, spotifyStatus: firstStatus, spotifyError: firstError };
-}
-
 // ── Route handler ──────────────────────────────────────────────────────────
+// Client fetches playlist tracks from Spotify (client already has the right scopes),
+// then POSTs them here. This route only touches Songstats + Supabase — no Spotify token needed.
 
-export async function GET(req: NextRequest) {
-  const playlistId = req.nextUrl.searchParams.get("playlist_id");
-  const authHeader = req.headers.get("authorization");
+export async function POST(req: NextRequest) {
+  const body = await req.json().catch(() => ({}));
+  const inputTracks: { id: string; name: string; artists: string[] }[] = body.tracks ?? [];
 
-  if (!playlistId) return NextResponse.json({ error: "missing playlist_id" }, { status: 400 });
-  if (!authHeader) return NextResponse.json({ error: "missing authorization" }, { status: 401 });
-  const accessToken = authHeader.replace("Bearer ", "");
+  if (!inputTracks.length) {
+    return NextResponse.json({ high: [], low: [], unknown: [], total: 0, fromCache: 0, fromApi: 0 });
+  }
 
   const songstatsKey = process.env.SONGSTATS_API_KEY;
   if (!songstatsKey) return NextResponse.json({ error: "SONGSTATS_API_KEY not set" }, { status: 500 });
@@ -105,28 +73,18 @@ export async function GET(req: NextRequest) {
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
   );
 
-  // 1. Fetch all tracks from the Spotify playlist
-  const { tracks: spotifyTracks, spotifyStatus, spotifyError } = await fetchAllPlaylistTracks(playlistId, accessToken);
-  if (!spotifyTracks.length) {
-    console.log("[PlaylistBPM] No tracks returned from Spotify for playlist:", playlistId);
-    return NextResponse.json({
-      high: [], low: [], unknown: [], total: 0, fromCache: 0, fromApi: 0,
-      debug: { spotifyStatus, spotifyError },
-    });
-  }
-
-  // Deduplicate by ID (same track can appear multiple times in a playlist)
+  // Deduplicate by Spotify ID
   const seen = new Set<string>();
-  const uniqueTracks = spotifyTracks.filter((t) => {
+  const uniqueTracks = inputTracks.filter((t) => {
     if (seen.has(t.id)) return false;
     seen.add(t.id);
     return true;
   });
   const trackIds = uniqueTracks.map((t) => t.id);
 
-  console.log(`[PlaylistBPM] ${playlistId}: ${uniqueTracks.length} unique tracks`);
+  console.log(`[PlaylistBPM] POST: ${uniqueTracks.length} unique tracks`);
 
-  // 2. Load cached BPMs from Supabase
+  // 1. Load cached BPMs from Supabase
   const { data: cachedRows, error: cacheErr } = await sb
     .from("track_bpm_cache")
     .select("spotify_track_id, bpm")
@@ -140,7 +98,7 @@ export async function GET(req: NextRequest) {
   const uncachedIds = trackIds.filter((id) => !bpmMap.has(id));
   console.log(`[PlaylistBPM] Cache hit: ${trackIds.length - uncachedIds.length}/${trackIds.length}, fetching ${uncachedIds.length} from Songstats`);
 
-  // 3. Fetch missing BPMs from Songstats in parallel batches
+  // 2. Fetch missing BPMs from Songstats in parallel batches
   const freshRows: { spotify_track_id: string; bpm: number | null }[] = [];
 
   for (let i = 0; i < uncachedIds.length; i += BATCH_SIZE) {
@@ -148,7 +106,6 @@ export async function GET(req: NextRequest) {
     const results = await Promise.all(
       batch.map(async (id, idx) => ({
         spotify_track_id: id,
-        // Log full response for the very first track only — reveals the API shape
         bpm: await fetchSongstatsBpm(id, songstatsKey, i === 0 && idx === 0),
       }))
     );
@@ -158,7 +115,7 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  // 4. Persist new BPM data to Supabase cache
+  // 3. Persist new BPM data to Supabase cache
   if (freshRows.length > 0) {
     const { error: upsertErr } = await sb
       .from("track_bpm_cache")
@@ -166,19 +123,14 @@ export async function GET(req: NextRequest) {
     if (upsertErr) console.log("[PlaylistBPM] Supabase cache write error:", upsertErr.message);
   }
 
-  // 5. Sort into energy buckets
+  // 4. Sort into energy buckets
   const high: TrackBpm[] = [];
   const low: TrackBpm[] = [];
   const unknown: TrackBpm[] = [];
 
   for (const track of uniqueTracks) {
     const bpm = bpmMap.get(track.id) ?? null;
-    const entry: TrackBpm = {
-      id: track.id,
-      name: track.name,
-      artists: track.artists?.map((a: any) => a.name) ?? [],
-      bpm,
-    };
+    const entry: TrackBpm = { id: track.id, name: track.name, artists: track.artists, bpm };
     if (bpm === null) unknown.push(entry);
     else if (bpm >= HIGH_BPM_CUTOFF) high.push(entry);
     else low.push(entry);
@@ -186,14 +138,12 @@ export async function GET(req: NextRequest) {
 
   const fromApi = freshRows.filter((r) => r.bpm !== null).length;
   console.log(
-    `[PlaylistBPM] ${playlistId} done — HIGH: ${high.length}, LOW: ${low.length}, UNKNOWN: ${unknown.length}`,
+    `[PlaylistBPM] done — HIGH: ${high.length}, LOW: ${low.length}, UNKNOWN: ${unknown.length}`,
     `| fromCache: ${trackIds.length - uncachedIds.length}, fromSongstats: ${fromApi}`
   );
 
   return NextResponse.json({
-    high,
-    low,
-    unknown,
+    high, low, unknown,
     total: uniqueTracks.length,
     fromCache: trackIds.length - uncachedIds.length,
     fromApi,
