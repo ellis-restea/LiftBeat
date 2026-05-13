@@ -106,6 +106,8 @@ function WorkoutInner() {
   // Playlist BPM buckets — populated in background on mount via Songstats
   const playlistBpmRef = useRef<{ high: TrackBpm[]; low: TrackBpm[] }>({ high: [], low: [] });
   const playlistBpmLoadedRef = useRef(false);
+  // Playlist URI to switch to on Start Workout (null = context already correct)
+  const pendingPlaylistContextRef = useRef<string | null>(null);
 
   const currentExercise = exercises[currentExerciseIndex];
   const totalSets = exercises.reduce((acc, ex) => acc + ex.sets, 0);
@@ -154,6 +156,33 @@ function WorkoutInner() {
 
         const playlistIds: string[] = data.playlist_ids;
         console.log(`[PlaylistBPM] Loading BPM data for ${playlistIds.length} playlist(s):`, playlistIds);
+
+        // Silently check Spotify context — runs before the slow BPM loading loop
+        // so the result is ready long before the user presses Start Workout
+        const playlistUris = playlistIds.map((id) => `spotify:playlist:${id}`);
+        try {
+          const cpRes = await fetch("https://api.spotify.com/v1/me/player/currently-playing", {
+            headers: { Authorization: `Bearer ${session.accessToken}` },
+          });
+          if (cpRes.status === 204 || !cpRes.ok) {
+            // Nothing playing — queue up first playlist for Start Workout
+            pendingPlaylistContextRef.current = playlistUris[0];
+            console.log(`[Playlist] No active playback — will start ${playlistUris[0]} on Start Workout`);
+          } else {
+            const cpData = await cpRes.json();
+            const contextUri: string | null = cpData?.context?.uri ?? null;
+            if (contextUri && playlistUris.includes(contextUri)) {
+              pendingPlaylistContextRef.current = null;
+              console.log(`[Playlist] Context already correct: ${contextUri}`);
+            } else {
+              pendingPlaylistContextRef.current = playlistUris[0];
+              console.log(`[Playlist] Wrong context (${contextUri ?? "none"}) — will switch to ${playlistUris[0]} on Start Workout`);
+            }
+          }
+        } catch {
+          // Non-fatal — fall back to first playlist on Start Workout
+          pendingPlaylistContextRef.current = playlistUris[0];
+        }
 
         const allHigh: TrackBpm[] = [];
         const allLow: TrackBpm[] = [];
@@ -408,10 +437,16 @@ function WorkoutInner() {
     const device = devices?.find((d: any) => d.is_active) ?? devices?.[0];
     if (!device) { setNoDevice(true); return; }
     setNoDevice(false);
+    const playBody = pendingPlaylistContextRef.current
+      ? { context_uri: pendingPlaylistContextRef.current }
+      : {};
+    if (pendingPlaylistContextRef.current) {
+      console.log(`[Playlist] Switching context to: ${pendingPlaylistContextRef.current}`);
+    }
     await spotifyFetch(`https://api.spotify.com/v1/me/player/play?device_id=${device.id}`, {
       method: "PUT",
       headers: { Authorization: `Bearer ${session.accessToken}`, "Content-Type": "application/json" },
-      body: JSON.stringify({}),
+      body: JSON.stringify(playBody),
     });
     setWorkoutState("warmup");
     await new Promise((r) => setTimeout(r, 500));
