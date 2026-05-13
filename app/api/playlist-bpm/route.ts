@@ -27,7 +27,7 @@ function extractBpm(data: any): number | null {
   return null;
 }
 
-async function fetchSongstatsBpm(spotifyId: string, apiKey: string): Promise<number | null> {
+async function fetchSongstatsBpm(spotifyId: string, apiKey: string, logFull = false): Promise<number | null> {
   try {
     const res = await fetch(
       `https://api.songstats.com/enterprise/v1/tracks/info?spotify_track_id=${spotifyId}`,
@@ -38,8 +38,16 @@ async function fetchSongstatsBpm(spotifyId: string, apiKey: string): Promise<num
       return null;
     }
     const data = await res.json();
+    // Log the full response once so we can verify the actual shape of the Songstats API
+    if (logFull) {
+      console.log(`[Songstats] Full raw response for ${spotifyId}:`, JSON.stringify(data));
+    }
     const bpm = extractBpm(data);
-    if (bpm === null) console.log(`[Songstats] No tempo found for ${spotifyId}`, JSON.stringify(data).slice(0, 200));
+    if (bpm === null) {
+      const topKeys = Object.keys(data ?? {}).join(", ");
+      console.log(`[Songstats] tempo not found for ${spotifyId} — top-level keys: [${topKeys}]`);
+      if (data?.track) console.log(`[Songstats] data.track keys: [${Object.keys(data.track).join(", ")}]`);
+    }
     return bpm;
   } catch (err) {
     console.log(`[Songstats] threw for ${spotifyId}:`, err);
@@ -127,9 +135,10 @@ export async function GET(req: NextRequest) {
   for (let i = 0; i < uncachedIds.length; i += BATCH_SIZE) {
     const batch = uncachedIds.slice(i, i + BATCH_SIZE);
     const results = await Promise.all(
-      batch.map(async (id) => ({
+      batch.map(async (id, idx) => ({
         spotify_track_id: id,
-        bpm: await fetchSongstatsBpm(id, songstatsKey),
+        // Log full response for the very first track only — reveals the API shape
+        bpm: await fetchSongstatsBpm(id, songstatsKey, i === 0 && idx === 0),
       }))
     );
     for (const r of results) {

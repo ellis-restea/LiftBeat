@@ -240,7 +240,39 @@ function WorkoutInner() {
 
       if (newId && newId !== prevTrackIdRef.current) {
         prevTrackIdRef.current = newId;
-        console.log('[Queue] Track changed →', newId);
+
+        const allBpmTracks = [...playlistBpmRef.current.high, ...playlistBpmRef.current.low];
+        const currentBpm = allBpmTracks.find((t) => t.id === newId)?.bpm ?? null;
+        console.log(
+          `[Track] ♪ "${data?.item?.name}" by ${data?.item?.artists?.[0]?.name}`,
+          `| BPM: ${currentBpm ?? 'not in playlist'}`,
+          `| ${currentBpm != null ? (currentBpm >= HIGH_BPM_CUTOFF ? 'HIGH ↑' : 'LOW ↓') : 'UNKNOWN'}`,
+          `| buckets: ${playlistBpmRef.current.high.length} HIGH / ${playlistBpmRef.current.low.length} LOW`
+        );
+
+        // Log the next 5 songs in the Spotify queue with their BPM
+        spotifyFetch("https://api.spotify.com/v1/me/player/queue", {
+          headers: { Authorization: `Bearer ${session.accessToken}` },
+        })
+          .then((r) => (r.ok ? r.json() : null))
+          .then((qData) => {
+            if (!qData?.queue?.length) {
+              console.log('[Queue] No upcoming tracks in queue');
+              return;
+            }
+            const upcoming = (qData.queue as any[]).slice(0, 5);
+            console.log('[Queue] Next 5 songs:', upcoming.map((t: any, i: number) => {
+              const bpm = allBpmTracks.find((b) => b.id === t.id)?.bpm ?? null;
+              return {
+                '#': i + 1,
+                name: t.name,
+                artist: t.artists?.[0]?.name ?? '?',
+                bpm: bpm ?? 'not in playlist',
+                category: bpm != null ? (bpm >= HIGH_BPM_CUTOFF ? 'HIGH' : 'LOW') : 'UNKNOWN',
+              };
+            }));
+          })
+          .catch(() => {});
       }
 
       setNoDevice(false);
