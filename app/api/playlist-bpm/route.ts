@@ -51,20 +51,18 @@ async function fetchSongstatsBpm(spotifyId: string, apiKey: string): Promise<num
 
 async function fetchAllPlaylistTracks(playlistId: string, accessToken: string): Promise<any[]> {
   const tracks: any[] = [];
-  // Request only the fields we need to minimise payload
-  let url: string | null =
-    `https://api.spotify.com/v1/playlists/${playlistId}/tracks` +
-    `?limit=100&fields=next,items(track(id,name,artists(name),album(name)))`;
+  let url: string | null = `https://api.spotify.com/v1/playlists/${playlistId}/tracks?limit=100`;
 
   while (url) {
     const res = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
+    console.log(`[PlaylistBPM] Spotify playlist page → HTTP ${res.status}`);
     if (!res.ok) {
-      console.log(`[PlaylistBPM] Spotify playlist fetch HTTP ${res.status}`);
+      const body = await res.text().catch(() => "");
+      console.log(`[PlaylistBPM] Spotify error body:`, body.slice(0, 300));
       break;
     }
     const data = await res.json();
     for (const item of data.items ?? []) {
-      // Skip local files and podcasts (no Spotify ID)
       if (item?.track?.id) tracks.push(item.track);
     }
     url = data.next ?? null;
@@ -94,7 +92,8 @@ export async function GET(req: NextRequest) {
   // 1. Fetch all tracks from the Spotify playlist
   const spotifyTracks = await fetchAllPlaylistTracks(playlistId, accessToken);
   if (!spotifyTracks.length) {
-    return NextResponse.json({ error: "playlist empty or inaccessible" }, { status: 404 });
+    console.log("[PlaylistBPM] No tracks returned from Spotify for playlist:", playlistId);
+    return NextResponse.json({ high: [], low: [], unknown: [], total: 0, fromCache: 0, fromApi: 0 });
   }
 
   // Deduplicate by ID (same track can appear multiple times in a playlist)

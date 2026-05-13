@@ -69,8 +69,6 @@ function WorkoutInner() {
   const lastCommandRef = useRef<number>(0);
   const progressBarRef = useRef<HTMLDivElement>(null);
   const isDraggingRef = useRef(false);
-  const bpmCacheRef = useRef<Map<string, number | null>>(new Map());
-  const bpmSourceCacheRef = useRef<Map<string, string>>(new Map());
   const prevTrackIdRef = useRef<string | null>(null);
   // Timestamp until which all Spotify API calls are blocked (rate limit)
   const rateLimitUntilRef = useRef<number>(0);
@@ -176,112 +174,6 @@ function WorkoutInner() {
     return res;
   }, []);
 
-  // Look up BPM for a Spotify track ID. Priority: ReccoBeats → GetSongBPM → null.
-  // Results cached in-memory to avoid redundant requests.
-  const getTrackBpm = useCallback(async (
-    spotifyId: string,
-    trackName?: string,
-    artistName?: string,
-  ): Promise<number | null> => {
-    if (bpmCacheRef.current.has(spotifyId)) {
-      return bpmCacheRef.current.get(spotifyId) ?? null;
-    }
-
-    // Step 1: ReccoBeats (no auth required, not subject to Spotify rate limits)
-    try {
-      const lookupRes = await fetch(`https://api.reccobeats.com/v1/track?ids=${spotifyId}`);
-      if (lookupRes.ok) {
-        const lookupData = await lookupRes.json();
-        const rbId = lookupData.content?.[0]?.id;
-        console.log(`[BPM] ReccoBeats lookup for ${spotifyId} → rbId: ${rbId ?? 'NOT FOUND'} (content length: ${lookupData.content?.length ?? 0})`);
-        if (rbId) {
-          const featRes = await fetch(`https://api.reccobeats.com/v1/track/${rbId}/audio-features`);
-          if (featRes.ok) {
-            const feat = await featRes.json();
-            console.log(`[BPM] ReccoBeats audio-features for rbId ${rbId} → tempo: ${feat.tempo ?? 'MISSING'}`);
-            if (typeof feat.tempo === "number") {
-              bpmCacheRef.current.set(spotifyId, feat.tempo);
-              bpmSourceCacheRef.current.set(spotifyId, "ReccoBeats");
-              return feat.tempo;
-            }
-          }
-        }
-      } else {
-        console.log(`[BPM] ReccoBeats lookup HTTP ${lookupRes.status} for ${spotifyId}`);
-      }
-    } catch (err) {
-      console.log(`[BPM] ReccoBeats threw for ${spotifyId}:`, err);
-    }
-
-    // Step 2: GetSongBPM fallback
-    const gsbKey = process.env.NEXT_PUBLIC_GETSONGBPM_KEY;
-    if (gsbKey && trackName) {
-      const artistLower = artistName?.toLowerCase();
-
-      const gsbSearch = async (title: string): Promise<{ bpm: number; matchedArtist: string } | null> => {
-        try {
-          const res = await fetch(
-            `https://api.getsong.co/search/?api_key=${gsbKey}&type=song&lookup=${encodeURIComponent(title)}`
-          );
-          if (!res.ok) {
-            console.log(`[GetSongBPM] HTTP ${res.status} for "${title}"`);
-            return null;
-          }
-          const data = await res.json();
-          const results: any[] = Array.isArray(data.search) ? data.search : [];
-          if (results.length > 0) console.log(`[GetSongBPM] first result raw:`, JSON.stringify(results[0]));
-          // Extract artist name from whichever field the API uses
-          const getArtist = (r: any): string =>
-            (r.artist?.title || r.artist?.name || r.artist_name ||
-             (typeof r.artist === 'string' ? r.artist : '') || '').toLowerCase();
-          console.log(`[GetSongBPM] "${title}" → ${results.length} results, artists: [${results.map(getArtist).join(', ')}]`);
-          // Always require a confirmed artist match — never accept unverified results.
-          const match = results.find((r) => {
-            const resultArtist = getArtist(r);
-            if (!resultArtist || !artistLower) return false;
-            return resultArtist.includes(artistLower) || artistLower.includes(resultArtist);
-          });
-          if (!match) return null;
-          const bpm = parseFloat(String(match.tempo));
-          return isNaN(bpm) ? null : { bpm, matchedArtist: getArtist(match) || 'unknown' };
-        } catch (err) {
-          console.log(`[GetSongBPM] threw for "${title}":`, err);
-          return null;
-        }
-      };
-
-      // Step 2a: full track name
-      console.log(`[GetSongBPM] Step 2a — searching: "${trackName}" (artist filter: ${artistLower ?? 'none'})`);
-      let result = await gsbSearch(trackName);
-      if (result) {
-        console.log(`[GetSongBPM] Found "${trackName}" by ${result.matchedArtist} → ${result.bpm} BPM`);
-        bpmCacheRef.current.set(spotifyId, result.bpm);
-        bpmSourceCacheRef.current.set(spotifyId, "GetSongBPM");
-        return result.bpm;
-      }
-
-      // Step 2b: strip remix/remaster suffix and retry
-      const baseTitle = trackName.replace(/\s*[-–]\s*.+$/, '').replace(/\s*\(.*?\)\s*$/, '').trim();
-      if (baseTitle && baseTitle !== trackName) {
-        console.log(`[GetSongBPM] Step 2b — base title: "${baseTitle}"`);
-        result = await gsbSearch(baseTitle);
-        if (result) {
-          console.log(`[GetSongBPM] Found via base title: ${baseTitle} by ${result.matchedArtist} → ${result.bpm} BPM`);
-          bpmCacheRef.current.set(spotifyId, result.bpm);
-          bpmSourceCacheRef.current.set(spotifyId, "GetSongBPM");
-          return result.bpm;
-        }
-      } else {
-        console.log(`[GetSongBPM] Step 2b skipped — base title same as original or empty`);
-      }
-
-      console.log(`[GetSongBPM] NOT FOUND: ${trackName}`);
-    }
-
-    bpmCacheRef.current.set(spotifyId, null);
-    bpmSourceCacheRef.current.set(spotifyId, "unknown");
-    return null;
-  }, [spotifyFetch]);
 
   // Skip tracks until one matches the desired energy level (or give up after 5 tries).
   const ensureTrackEnergy = useCallback(async (wantHigh: boolean) => {
@@ -295,9 +187,9 @@ function WorkoutInner() {
       const track = data?.item;
       if (!track?.id) break;
 
-      const artist = track.artists?.[0]?.name;
-      const bpm = await getTrackBpm(track.id, track.name, artist);
-      console.log('[BPM] Current track:', track.name, 'by', artist, '| BPM:', bpm, '| Category:', bpm != null ? (bpm >= HIGH_BPM_CUTOFF ? 'HIGH' : 'LOW') : 'UNKNOWN');
+      const allTracks = [...playlistBpmRef.current.high, ...playlistBpmRef.current.low];
+      const bpm = allTracks.find((t) => t.id === track.id)?.bpm ?? null;
+      console.log('[BPM] Current track:', track.name, '| BPM:', bpm ?? 'not in playlist', '| Category:', bpm != null ? (bpm >= HIGH_BPM_CUTOFF ? 'HIGH' : 'LOW') : 'UNKNOWN');
 
       if (bpm === null) {
         console.log(`[BPM] BPM unknown for "${track.name}" — skipping`);
@@ -326,7 +218,7 @@ function WorkoutInner() {
     }
     lastCommandRef.current = 0;
     fetchCurrentTrackRef.current();
-  }, [session, getTrackBpm, spotifyFetch]);
+  }, [session, spotifyFetch]);
 
   const ensureTrackEnergyRef = useRef(ensureTrackEnergy);
   useEffect(() => { ensureTrackEnergyRef.current = ensureTrackEnergy; }, [ensureTrackEnergy]);
@@ -346,45 +238,9 @@ function WorkoutInner() {
       const data = await res.json();
       const newId = data?.item?.id;
 
-      // New track — pre-warm BPM cache for the upcoming queue (fire and forget)
       if (newId && newId !== prevTrackIdRef.current) {
         prevTrackIdRef.current = newId;
-        spotifyFetch("https://api.spotify.com/v1/me/player/queue", {
-          headers: { Authorization: `Bearer ${session.accessToken}` },
-        })
-          .then((r) => (r.ok ? r.json() : null))
-          .then((qData) => {
-            if (!qData) return;
-            const upcoming = [qData.currently_playing, ...(qData.queue || [])]
-              .filter(Boolean)
-              .slice(0, 6);
-            console.log(`[Queue] Track changed — pre-loading BPM for ${upcoming.length} tracks`);
-            Promise.all(
-              upcoming.map(async (t: any) => {
-                const bpm = t?.id ? await getTrackBpm(t.id, t.name, t.artists?.[0]?.name) : null;
-                const api = t?.id ? (bpmSourceCacheRef.current.get(t.id) ?? 'unknown') : 'unknown';
-                let songstats: any = null;
-                if (t?.id) {
-                  try {
-                    const ssRes = await fetch(`/api/songstats/track?id=${t.id}`);
-                    songstats = await ssRes.json();
-                  } catch {}
-                }
-                return { name: t?.name, spotifyId: t?.id ?? null, bpm, api, songstats };
-              })
-            ).then((queueTracks) => {
-              console.log('[BPM] Queue analysis:', queueTracks.map((t) => ({
-                name: t.name,
-                bpm: t.bpm,
-                category: t.bpm != null ? (t.bpm >= HIGH_BPM_CUTOFF ? 'HIGH' : 'LOW') : 'UNKNOWN',
-                api: t.api,
-                spotifyId: t.spotifyId,
-                spotifyEndpoint: t.spotifyId ? `https://api.spotify.com/v1/tracks/${t.spotifyId}` : null,
-                songstats: t.songstats,
-              })));
-            });
-          })
-          .catch(() => {});
+        console.log('[Queue] Track changed →', newId);
       }
 
       setNoDevice(false);
@@ -398,7 +254,7 @@ function WorkoutInner() {
           : 0
       );
     }
-  }, [session, getTrackBpm, spotifyFetch]);
+  }, [session, spotifyFetch]);
 
   useEffect(() => { fetchCurrentTrackRef.current = fetchCurrentTrack; }, [fetchCurrentTrack]);
 
@@ -833,8 +689,8 @@ function WorkoutInner() {
 
         <p className="text-center text-gray-600 text-xs">
           BPM data provided by{" "}
-          <a href="https://getsongbpm.com" target="_blank" rel="noopener noreferrer" className="underline hover:text-gray-400 transition">
-            GetSongBPM
+          <a href="https://songstats.com" target="_blank" rel="noopener noreferrer" className="underline hover:text-gray-400 transition">
+            Songstats
           </a>
         </p>
       </div>
