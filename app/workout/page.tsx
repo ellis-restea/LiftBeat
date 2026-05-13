@@ -450,6 +450,56 @@ function WorkoutInner() {
     });
     setWorkoutState("warmup");
     await new Promise((r) => setTimeout(r, 500));
+
+    // Pre-load BPM for current track + next 5 queue tracks before energy steering.
+    // Without this, tracks from a freshly-switched playlist have no BPM data yet
+    // and ensureTrackEnergy skips them all as "unknown".
+    try {
+      const [cpRes, qRes] = await Promise.all([
+        spotifyFetch("https://api.spotify.com/v1/me/player/currently-playing", {
+          headers: { Authorization: `Bearer ${session.accessToken}` },
+        }),
+        spotifyFetch("https://api.spotify.com/v1/me/player/queue", {
+          headers: { Authorization: `Bearer ${session.accessToken}` },
+        }),
+      ]);
+      const knownIds = new Set([...playlistBpmRef.current.high, ...playlistBpmRef.current.low].map((t) => t.id));
+      const toLoad: { id: string; name: string; artists: string[] }[] = [];
+      if (cpRes.status === 200) {
+        const d = await cpRes.json();
+        const t = d?.item;
+        if (t?.id && !knownIds.has(t.id)) {
+          toLoad.push({ id: t.id, name: t.name, artists: (t.artists ?? []).map((a: any) => a.name) });
+          knownIds.add(t.id);
+        }
+      }
+      if (qRes.ok) {
+        const d = await qRes.json();
+        for (const t of (d?.queue ?? []).slice(0, 5)) {
+          if (t?.id && !knownIds.has(t.id)) {
+            toLoad.push({ id: t.id, name: t.name, artists: (t.artists ?? []).map((a: any) => a.name) });
+            knownIds.add(t.id);
+          }
+        }
+      }
+      if (toLoad.length > 0) {
+        console.log(`[BPM] Start pre-load: ${toLoad.length} tracks`);
+        const r = await fetch("/api/playlist-bpm", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ tracks: toLoad }),
+        });
+        if (r.ok) {
+          const result = await r.json();
+          playlistBpmRef.current = {
+            high: [...playlistBpmRef.current.high, ...(result.high ?? [])],
+            low:  [...playlistBpmRef.current.low,  ...(result.low  ?? [])],
+          };
+          console.log(`[BPM] Start pre-load done: +${result.high?.length ?? 0} HIGH, +${result.low?.length ?? 0} LOW | buckets: ${playlistBpmRef.current.high.length} HIGH / ${playlistBpmRef.current.low.length} LOW`);
+        }
+      }
+    } catch { /* non-fatal — ensureTrackEnergy will still run */ }
+
     ensureTrackEnergy(true);
   };
 
