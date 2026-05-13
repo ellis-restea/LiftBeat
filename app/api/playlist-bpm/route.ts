@@ -112,7 +112,10 @@ export async function POST(req: NextRequest) {
   if (cacheErr) console.log("[PlaylistBPM] Supabase cache read error:", cacheErr.message);
 
   const bpmMap = new Map<string, number | null>();
-  for (const row of cachedRows ?? []) bpmMap.set(row.spotify_track_id, row.bpm);
+  // Only treat rows with non-null bpm as cached — null-bpm rows are stale/bad and should be retried
+  for (const row of cachedRows ?? []) {
+    if (row.bpm !== null) bpmMap.set(row.spotify_track_id, row.bpm);
+  }
 
   const uncachedIds = trackIds.filter((id) => !bpmMap.has(id));
   console.log(
@@ -135,11 +138,11 @@ export async function POST(req: NextRequest) {
     for (const { id, features } of results) {
       const bpm = features?.tempo ?? null;
       bpmMap.set(id, bpm);
-      freshRows.push({
-        spotify_track_id: id,
-        bpm,
-        ...(features ?? Object.fromEntries(FEATURE_KEYS.map((k) => [k, null])) as AudioFeatures),
-      });
+      // Only cache rows where Songstats returned actual data — never cache failed lookups
+      // (null features = HTTP error; caching them would permanently block re-fetching)
+      if (features !== null) {
+        freshRows.push({ spotify_track_id: id, bpm, ...features });
+      }
     }
   }
 
