@@ -17,15 +17,27 @@ app/
   page.tsx              — Landing page (Get Started / Log In)
   layout.tsx            — Root layout with SessionProvider
   providers.tsx         — Client-side SessionProvider wrapper
-  globals.css           — Tailwind imports
+  globals.css           — Tailwind imports + .skeleton shimmer + tabEnter + swish-border animations
   onboarding/page.tsx   — 3 slide onboarding for new users
-  dashboard/page.tsx    — Returning user dashboard (saved workouts list)
-  playlist-select/page.tsx — One-time onboarding playlist selection
+  dashboard/page.tsx    — Thin AppShell wrapper (initialTab="home")
+  stats/page.tsx        — Thin AppShell wrapper (initialTab="stats")
+  settings/page.tsx     — Thin AppShell wrapper (initialTab="settings")
+  playlist-select/page.tsx — One-time onboarding playlist selection (no bottom nav)
   workout-setup/page.tsx   — Build workout (exercises, sets, reps, rest)
   workout/page.tsx         — Main workout screen
   api/auth/[...nextauth]/route.js — Spotify OAuth + token refresh
+  components/
+    AppShell.tsx        — SPA shell: manages tab state, persistent mounts, auth redirect, playlist check
+    BottomNav.tsx       — Floating frosted-glass pill nav (320px, blur backdrop), sliding pill indicator
+    LoadingScreen.tsx   — Morphing star frames (✦✧✸✹✺…) cycling at 150ms, rotating messages
+    tabs/
+      HomeTab.tsx       — Saved workouts list with shimmer skeleton rows
+      MusicTab.tsx      — Playlist selector with shimmer skeleton rows, pre-loads saved IDs
+      StatsTab.tsx      — Stats (coming soon)
+      SettingsTab.tsx   — Sound + haptic toggles, persisted to localStorage
 lib/
   supabase.ts           — Supabase client
+  feedback.ts           — Sound (Web Audio API) + haptic (navigator.vibrate) feedback system
 types/
   next-auth.d.ts        — Session type extensions
 Environment Variables (.env.local):
@@ -115,12 +127,18 @@ Ad supported free tier (TBD)
 App Name: LiftSync
 Design Language:
 
-Dark theme, black background
-Green (#22c55e) as primary accent
-State-based background colors for workout screen
+Dark base: bg-[#0a0a0f] (very dark navy-black)
+Electric blue (#3b82f6) as primary accent — replaced all green accents
+card-metallic CSS utility: gradient surface + border + shadow
+State-based radial glow overlays on workout screen (amber/red/blue/emerald), 700ms opacity transition
+Primary buttons: solid blue, white text, active:scale-95
+Secondary buttons: transparent with blue outline, active:scale-95
+Swish border animation: CSS @property --swish-angle conic-gradient sweeping on all CTA buttons
+Bottom nav: floating frosted-glass pill (320px, border-radius 9999, blur(20px) backdrop)
+All tabs permanently mounted in AppShell (display:block/none) — no remounting, no loading flicker
+Shimmer skeleton states in HomeTab and MusicTab while data loads
 Tailwind v4 for styling
 Clean, minimal gym aesthetic
-Pencil icon (✏️) for edit playlists on dashboard
 
 User Identity:
 
@@ -129,13 +147,24 @@ No email returned in Spotify session — using session.user.name as user_id in S
 GitHub repo: https://github.com/babacaca123/LiftSync
 
 
+Sound & Haptic Feedback (lib/feedback.ts):
+
+sound(type): Web Audio API sine oscillator with linear ramp fade-out (no click artifact). light=800hz/12ms, medium=600hz/18ms, heavy=400hz/25ms, error=two 300hz pulses.
+haptic(type): navigator.vibrate() — light=10ms, medium=15ms, heavy=30ms, error=[50,50,50]. No-ops silently on iOS.
+feedback(type): calls both. Checks localStorage ls_sound / ls_haptic (default on).
+Guards: (1) input focus guard — skips all feedback when an <input>/<textarea> is focused; (2) 80ms dedup window per type — prevents doubled sounds from rapid taps; (3) 150ms minimum gap between any two sounds — prevents browser audio suppression from silencing bursts.
+AudioContext resume is properly awaited before scheduling oscillators.
+Wired up: BottomNav tabs (light), workout-setup steppers/add/superset (light), save (medium), MusicTab tap/save (medium), HomeTab delete/confirm/cancel (medium/medium/light), Start Workout/Start Set/Done with Set (heavy).
+Settings toggles in SettingsTab persist to ls_sound / ls_haptic.
+
+
 Additional context:
 
 Do not ask me technical questions, make the best decisions for a clean gym app
-Color scheme: keep dark/moody aesthetic (bg-red-950, bg-blue-950 etc.), accent colors should react to state (buttons, progress bars, text)
-Done state should be green
+Color scheme: dark/moody base (bg-[#0a0a0f]), electric blue (#3b82f6) accent, state glow overlays on workout screen
+Done state: emerald glow + emerald button
 Exercising transition: 300ms (punchy), Resting transition: 700ms (slow calm fade)
-Full screen color wash transitions
+Full screen color wash transitions (radial glow overlays, not background-color swap)
 Start by fixing these in order: 1 superset logic, 2 save playlists to Supabase, 3 saved workout → direct to workout screen
 
 
