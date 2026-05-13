@@ -291,27 +291,67 @@ function WorkoutInner() {
           `| buckets: ${playlistBpmRef.current.high.length} HIGH / ${playlistBpmRef.current.low.length} LOW`
         );
 
-        // Log the next 5 songs in the Spotify queue with their BPM
+        // Fetch queue — log next 5 and dynamically load BPM for any unknown tracks
+        const currentTrackMeta = data?.item?.id ? {
+          id: data.item.id as string,
+          name: data.item.name as string,
+          artists: (data.item.artists ?? []).map((a: any) => a.name as string),
+        } : null;
+
         spotifyFetch("https://api.spotify.com/v1/me/player/queue", {
           headers: { Authorization: `Bearer ${session.accessToken}` },
         })
           .then((r) => (r.ok ? r.json() : null))
           .then((qData) => {
-            if (!qData?.queue?.length) {
-              console.log('[Queue] No upcoming tracks in queue');
-              return;
-            }
-            const upcoming = (qData.queue as any[]).slice(0, 5);
+            const upcoming: any[] = (qData?.queue ?? []).slice(0, 5);
+
+            // Log queue with current BPM knowledge
+            const snapshot = [...playlistBpmRef.current.high, ...playlistBpmRef.current.low];
             console.log('[Queue] Next 5 songs:', upcoming.map((t: any, i: number) => {
-              const bpm = allBpmTracks.find((b) => b.id === t.id)?.bpm ?? null;
+              const bpm = snapshot.find((b) => b.id === t.id)?.bpm ?? null;
               return {
                 '#': i + 1,
                 name: t.name,
                 artist: t.artists?.[0]?.name ?? '?',
-                bpm: bpm ?? 'not in playlist',
+                bpm: bpm ?? 'unknown',
                 category: bpm != null ? (bpm >= HIGH_BPM_CUTOFF ? 'HIGH' : 'LOW') : 'UNKNOWN',
               };
             }));
+
+            // Dynamically fetch Songstats BPM for current track + queue tracks not yet cached
+            const knownIds = new Set(snapshot.map((t) => t.id));
+            const toLoad = [
+              ...(currentTrackMeta && !knownIds.has(currentTrackMeta.id) ? [currentTrackMeta] : []),
+              ...upcoming
+                .filter((t: any) => t?.id && !knownIds.has(t.id))
+                .map((t: any) => ({
+                  id: t.id as string,
+                  name: t.name as string,
+                  artists: (t.artists ?? []).map((a: any) => a.name as string),
+                })),
+            ];
+
+            if (toLoad.length === 0) return;
+
+            console.log(`[BPM] Dynamic load: fetching Songstats for ${toLoad.length} new tracks`);
+            fetch("/api/playlist-bpm", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ tracks: toLoad }),
+            })
+              .then((r) => (r.ok ? r.json() : null))
+              .then((result) => {
+                if (!result) return;
+                playlistBpmRef.current = {
+                  high: [...playlistBpmRef.current.high, ...(result.high ?? [])],
+                  low:  [...playlistBpmRef.current.low,  ...(result.low  ?? [])],
+                };
+                console.log(
+                  `[BPM] +${result.high?.length ?? 0} HIGH, +${result.low?.length ?? 0} LOW`,
+                  `| buckets now: ${playlistBpmRef.current.high.length} HIGH / ${playlistBpmRef.current.low.length} LOW`,
+                );
+              })
+              .catch(() => {});
           })
           .catch(() => {});
       }
