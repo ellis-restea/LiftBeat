@@ -21,6 +21,7 @@ interface TrackBpm {
   name: string;
   artists: string[];
   bpm: number | null;
+  playlistId?: string; // which playlist this track came from — used for even distribution
 }
 
 type WorkoutState = "idle" | "warmup" | "exercising" | "resting" | "done";
@@ -66,6 +67,25 @@ async function fetchClientPlaylistTracks(
   return { tracks, firstStatus };
 }
 
+// Pick a track from a BPM bucket, avoiding recently-queued tracks and distributing
+// evenly across playlists (one random playlist first, then a random track from it).
+function pickFromBucket(bucket: TrackBpm[], exclude: Set<string>): TrackBpm | null {
+  if (bucket.length === 0) return null;
+  const eligible = bucket.filter((t) => !exclude.has(t.id));
+  const pool = eligible.length > 0 ? eligible : bucket; // fall back if everything recently played
+
+  const byPlaylist = new Map<string, TrackBpm[]>();
+  for (const t of pool) {
+    const key = t.playlistId ?? "unknown";
+    if (!byPlaylist.has(key)) byPlaylist.set(key, []);
+    byPlaylist.get(key)!.push(t);
+  }
+  const playlists = [...byPlaylist.keys()];
+  const chosen = playlists[Math.floor(Math.random() * playlists.length)];
+  const tracks = byPlaylist.get(chosen)!;
+  return tracks[Math.floor(Math.random() * tracks.length)];
+}
+
 export default function Workout() {
   return <Suspense><WorkoutInner /></Suspense>;
 }
@@ -105,7 +125,10 @@ function WorkoutInner() {
   const fetchCurrentTrackRef = useRef<() => Promise<void>>(async () => {});
   // Playlist BPM buckets — populated in background on mount via Songstats
   const playlistBpmRef = useRef<{ high: TrackBpm[]; low: TrackBpm[] }>({ high: [], low: [] });
-  const playlistBpmLoadedRef = useRef(false);
+  // Sorted playlist IDs currently loaded — re-run preload when selection changes
+  const loadedPlaylistIdsRef = useRef<string>("");
+  // Track IDs queued recently — prevents immediate replays (capped at 30)
+  const recentlyQueuedRef = useRef<Set<string>>(new Set());
   // Playlist URI to switch to on Start Workout (null = context already correct)
   const pendingPlaylistContextRef = useRef<string | null>(null);
 
@@ -136,10 +159,10 @@ function WorkoutInner() {
   }, [workoutId]);
 
   // Pre-load BPM buckets from Songstats (via Supabase cache) for all saved playlists.
-  // Runs once when session is available; results stored in playlistBpmRef for the queue system.
+  // Re-runs whenever session changes; skips if the same playlist IDs are already loaded
+  // so token refreshes don't cause redundant reloads, but new playlist selections do.
   useEffect(() => {
-    if (!session?.accessToken || !session?.user?.name || playlistBpmLoadedRef.current) return;
-    playlistBpmLoadedRef.current = true;
+    if (!session?.accessToken || !session?.user?.name) return;
 
     const userId = session.user.name;
 
@@ -155,6 +178,11 @@ function WorkoutInner() {
         }
 
         const playlistIds: string[] = data.playlist_ids;
+        const sortedKey = [...playlistIds].sort().join(",");
+        if (loadedPlaylistIdsRef.current === sortedKey) return; // same selection already loaded
+        loadedPlaylistIdsRef.current = sortedKey;
+        playlistBpmRef.current = { high: [], low: [] }; // clear stale buckets from old selection
+        recentlyQueuedRef.current.clear(); // reset replay history for new selection
         console.log(`[PlaylistBPM] Loading BPM data for ${playlistIds.length} playlist(s):`, playlistIds);
 
         // Silently check Spotify context — runs before the slow BPM loading loop
@@ -209,8 +237,8 @@ function WorkoutInner() {
               continue;
             }
             const result = await res.json();
-            allHigh.push(...(result.high ?? []));
-            allLow.push(...(result.low ?? []));
+            allHigh.push(...(result.high ?? []).map((t: TrackBpm) => ({ ...t, playlistId: pid })));
+            allLow.push(...(result.low  ?? []).map((t: TrackBpm) => ({ ...t, playlistId: pid })));
             console.log(
               `[PlaylistBPM] ${pid} → HIGH: ${result.high?.length}, LOW: ${result.low?.length}, UNKNOWN: ${result.unknown?.length}`,
               `| total: ${result.total}, cache: ${result.fromCache}, fresh: ${result.fromApi}`
@@ -296,12 +324,17 @@ function WorkoutInner() {
         break;
       }
 
-      // Wrong energy or still unknown — queue a track from the correct bucket
-      // (spans all selected playlists) then skip to it
+      // Wrong energy or still unknown — pick a track from the correct bucket
+      // (spans all selected playlists, evenly distributed, no recent replays) and queue it
       const targetBucket = wantHigh ? playlistBpmRef.current.high : playlistBpmRef.current.low;
-      if (targetBucket.length > 0) {
-        const pick = targetBucket[Math.floor(Math.random() * targetBucket.length)];
-        console.log(`[BPM] Queuing "${pick.name}" (${pick.bpm} BPM) from ${wantHigh ? 'HIGH' : 'LOW'} bucket`);
+      const pick = pickFromBucket(targetBucket, recentlyQueuedRef.current);
+      if (pick) {
+        recentlyQueuedRef.current.add(pick.id);
+        if (recentlyQueuedRef.current.size > 30) {
+          const oldest = recentlyQueuedRef.current.values().next().value as string;
+          recentlyQueuedRef.current.delete(oldest);
+        }
+        console.log(`[BPM] Queuing "${pick.name}" (${pick.bpm} BPM, playlist: ${pick.playlistId ?? 'unknown'}) from ${wantHigh ? 'HIGH' : 'LOW'} bucket`);
         await spotifyFetch(
           `https://api.spotify.com/v1/me/player/queue?uri=spotify:track:${pick.id}`,
           { method: "POST", headers: { Authorization: `Bearer ${session.accessToken}` } },
