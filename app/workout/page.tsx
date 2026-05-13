@@ -245,7 +245,11 @@ function WorkoutInner() {
   }, []);
 
 
-  // Skip tracks until one matches the desired energy level (or give up after 5 tries).
+  // Steer Spotify to the correct energy level.
+  // 1. If the current track's BPM is unknown, fetch it from Songstats before deciding.
+  // 2. If the energy is wrong (or still unknown), pick a track from the correct BPM
+  //    bucket (which spans ALL selected playlists) and queue it explicitly, then skip.
+  //    This ensures the next song always comes from the right playlist + energy tier.
   const ensureTrackEnergy = useCallback(async (wantHigh: boolean) => {
     if (!session?.accessToken) return;
     for (let attempt = 0; attempt < 5; attempt++) {
@@ -257,28 +261,55 @@ function WorkoutInner() {
       const track = data?.item;
       if (!track?.id) break;
 
-      const allTracks = [...playlistBpmRef.current.high, ...playlistBpmRef.current.low];
-      const bpm = allTracks.find((t) => t.id === track.id)?.bpm ?? null;
-      console.log('[BPM] Current track:', track.name, '| BPM:', bpm ?? 'not in playlist', '| Category:', bpm != null ? (bpm >= HIGH_BPM_CUTOFF ? 'HIGH' : 'LOW') : 'UNKNOWN');
+      let bpm: number | null =
+        [...playlistBpmRef.current.high, ...playlistBpmRef.current.low]
+          .find((t) => t.id === track.id)?.bpm ?? null;
 
+      // Fetch BPM on-demand if not already in buckets (e.g. track from second playlist)
       if (bpm === null) {
-        console.log(`[BPM] BPM unknown for "${track.name}" — skipping`);
-        lastCommandRef.current = Date.now() - 1200;
-        await spotifyFetch("https://api.spotify.com/v1/me/player/next", {
-          method: "POST",
-          headers: { Authorization: `Bearer ${session.accessToken}` },
-        });
-        await new Promise((resolve) => setTimeout(resolve, 700));
-        continue;
+        console.log(`[BPM] Unknown BPM for "${track.name}" — fetching from Songstats`);
+        try {
+          const r = await fetch("/api/playlist-bpm", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              tracks: [{ id: track.id, name: track.name, artists: (track.artists ?? []).map((a: any) => a.name) }],
+            }),
+          });
+          if (r.ok) {
+            const result = await r.json();
+            playlistBpmRef.current = {
+              high: [...playlistBpmRef.current.high, ...(result.high ?? [])],
+              low:  [...playlistBpmRef.current.low,  ...(result.low  ?? [])],
+            };
+            bpm = [...playlistBpmRef.current.high, ...playlistBpmRef.current.low]
+              .find((t) => t.id === track.id)?.bpm ?? null;
+            console.log(`[BPM] "${track.name}" → ${bpm != null ? `${bpm} BPM (${bpm >= HIGH_BPM_CUTOFF ? 'HIGH' : 'LOW'})` : 'no data'}`);
+          }
+        } catch { /* non-fatal */ }
+      } else {
+        console.log(`[BPM] "${track.name}" | ${bpm} BPM | ${bpm >= HIGH_BPM_CUTOFF ? 'HIGH' : 'LOW'}`);
       }
 
-      const isHigh = bpm >= HIGH_BPM_CUTOFF;
-      if (isHigh === wantHigh) {
-        console.log('[BPM] Match found:', track.name, 'BPM:', bpm);
+      if (bpm !== null && bpm >= HIGH_BPM_CUTOFF === wantHigh) {
+        console.log(`[BPM] Match: "${track.name}" ${bpm} BPM`);
         break;
       }
 
-      console.log('[BPM] Skipping — needed:', wantHigh ? 'HIGH' : 'LOW', 'got:', isHigh ? 'HIGH' : 'LOW');
+      // Wrong energy or still unknown — queue a track from the correct bucket
+      // (spans all selected playlists) then skip to it
+      const targetBucket = wantHigh ? playlistBpmRef.current.high : playlistBpmRef.current.low;
+      if (targetBucket.length > 0) {
+        const pick = targetBucket[Math.floor(Math.random() * targetBucket.length)];
+        console.log(`[BPM] Queuing "${pick.name}" (${pick.bpm} BPM) from ${wantHigh ? 'HIGH' : 'LOW'} bucket`);
+        await spotifyFetch(
+          `https://api.spotify.com/v1/me/player/queue?uri=spotify:track:${pick.id}`,
+          { method: "POST", headers: { Authorization: `Bearer ${session.accessToken}` } },
+        );
+      } else {
+        console.log(`[BPM] ${wantHigh ? 'HIGH' : 'LOW'} bucket empty — skipping forward`);
+      }
+
       lastCommandRef.current = Date.now() - 1200;
       await spotifyFetch("https://api.spotify.com/v1/me/player/next", {
         method: "POST",
