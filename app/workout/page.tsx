@@ -119,7 +119,6 @@ function buildQueue(
     i++;
   }
 
-  console.log(`[Queue] buildQueue(${state}): ${result.length} ${wantHigh ? "HIGH" : "LOW"} tracks`);
   return result;
 }
 
@@ -252,9 +251,6 @@ function WorkoutInner() {
               `[PlaylistBPM] ${pid} → HIGH: ${result.high?.length ?? 0}, LOW: ${result.low?.length ?? 0}, UNKNOWN: ${result.unknown?.length ?? 0}`,
               `| cache: ${result.fromCache}, fresh: ${result.fromApi}`
             );
-            if ((result.unknown?.length ?? 0) > 0) {
-              console.warn(`[PlaylistBPM] ${result.unknown.length} tracks have no BPM data — they won't be played`);
-            }
           } catch (err) {
             console.log(`[PlaylistBPM] Error for ${pid}:`, err);
           }
@@ -310,6 +306,15 @@ function WorkoutInner() {
     }
 
     currentQueueRef.current = queue;
+
+    // Log full queue with BPM for each track
+    const queueDetails = queue.map((uri, i) => {
+      const id = uri.replace("spotify:track:", "");
+      const t = trackPoolRef.current.find((x) => x.id === id);
+      return { "#": i + 1, name: t?.name ?? "?", artists: t?.artists?.join(", ") ?? "?", bpm: t?.bpm ?? "?", playlist: t?.playlistId ?? "?" };
+    });
+    console.log(`[Queue] ${state} (${queue.length} tracks):`, queueDetails);
+
     lastCommandRef.current = Date.now();
     await spotifyFetch(`https://api.spotify.com/v1/me/player/play?device_id=${deviceIdRef.current}`, {
       method: "PUT",
@@ -319,7 +324,6 @@ function WorkoutInner() {
       },
       body: JSON.stringify({ uris: queue }),
     });
-    console.log(`[Queue] Playing ${queue.length} tracks for state: ${state}`);
   }, [session, spotifyFetch]);
 
   const playForStateRef = useRef(playForState);
