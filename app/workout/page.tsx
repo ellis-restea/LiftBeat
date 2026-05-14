@@ -179,6 +179,9 @@ function WorkoutInner() {
   const preloadedRef = useRef(false);
   const currentTrackRef = useRef<any>(null);
   const withMuteTransitionRef = useRef<(fn: () => Promise<void>) => Promise<void>>(async (fn) => fn());
+  // True once we've confirmed (and optionally corrected) the BPM of the playing track in idle state.
+  // Prevents repeated correction attempts and signals handleStart to skip the song switch.
+  const correctionAppliedRef = useRef(false);
 
   const currentExercise = exercises[currentExerciseIndex];
   const totalSets = exercises.reduce((acc, ex) => acc + ex.sets, 0);
@@ -351,6 +354,62 @@ function WorkoutInner() {
     const data = await res.json();
     setSpotifyPlaying(data?.is_playing ?? false);
 
+    // Idle-state correction: before the workout starts, ensure the playing track is HIGH BPM.
+    // Runs every poll until correctionAppliedRef is set. Pool must be loaded first.
+    if (
+      workoutStateRef.current === "idle" &&
+      !correctionAppliedRef.current &&
+      data?.is_playing &&
+      data?.item?.id
+    ) {
+      const pool = trackPoolRef.current;
+      if (pool.length > 0) {
+        const inPool = pool.find(t => t.id === data.item.id);
+        const isHighBpm = inPool?.bpm != null && inPool.bpm >= HIGH_BPM_CUTOFF;
+
+        if (isHighBpm) {
+          correctionAppliedRef.current = true;
+          console.log(`[Auto-switch] Already HIGH BPM (${inPool?.bpm}) — no switch needed`);
+        } else {
+          // Resolve device if needed
+          if (!deviceIdRef.current) {
+            try {
+              const dr = await spotifyFetch("https://api.spotify.com/v1/me/player/devices", {
+                headers: { Authorization: `Bearer ${session.accessToken}` },
+              });
+              if (dr.ok) {
+                const { devices } = await dr.json();
+                const d = devices?.find((d: any) => d.is_active) ?? devices?.[0];
+                if (d) deviceIdRef.current = d.id;
+              }
+            } catch { /* non-fatal */ }
+          }
+
+          if (deviceIdRef.current) {
+            const queue = buildQueue("warmup", pool, playedIdsRef.current);
+            if (queue.length > 0) {
+              currentQueueRef.current = queue;
+              console.log("[Auto-switch] Switching to HIGH BPM before workout starts");
+              await withMuteTransitionRef.current(async () => {
+                lastCommandRef.current = Date.now();
+                await spotifyFetch(
+                  `https://api.spotify.com/v1/me/player/play?device_id=${deviceIdRef.current}`,
+                  {
+                    method: "PUT",
+                    headers: { Authorization: `Bearer ${session.accessToken}`, "Content-Type": "application/json" },
+                    body: JSON.stringify({ uris: queue }),
+                  }
+                );
+              });
+              correctionAppliedRef.current = true;
+            }
+          }
+        }
+        return; // let next poll refresh UI with the corrected track
+      }
+      // Pool not ready yet — fall through to update UI, retry correction on next poll
+    }
+
     // Freeze all UI and queue logic while a mute transition is in progress
     if (isTransitioningRef.current) return;
 
@@ -439,61 +498,21 @@ function WorkoutInner() {
   }, [fetchCurrentTrack]);
 
   // Preload queue + BPM on page load so Start Workout is near-instant.
-  // Also auto-switches to HIGH BPM if Spotify is playing a LOW/unknown track.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+  // After the pool is ready, immediately triggers a fetchCurrentTrack call so the
+  // correction logic runs without waiting for the next 5s poll.
   useEffect(() => {
     if (!session?.accessToken || preloadedRef.current) return;
     preloadedRef.current = true;
 
-    (async () => {
-      const pool = await fetchQueueAndEnrich();
+    fetchQueueAndEnrich().then((pool) => {
       if (pool.length === 0) return;
       trackPoolRef.current = pool;
       const high = pool.filter(t => t.bpm != null && t.bpm >= HIGH_BPM_CUTOFF);
       const low  = pool.filter(t => t.bpm != null && t.bpm < HIGH_BPM_CUTOFF);
       console.log(`[Preload] Ready — HIGH: ${high.length}, LOW: ${low.length} tracks`);
-
-      if (workoutStateRef.current !== "idle" || high.length === 0) return;
-
-      // Check what's currently playing to decide if auto-switch is needed
-      const cpRes = await fetch("https://api.spotify.com/v1/me/player/currently-playing", {
-        headers: { Authorization: `Bearer ${session.accessToken}` },
-        cache: "no-store",
-      });
-      if (!cpRes.ok || cpRes.status === 204) return;
-      const cpData = await cpRes.json();
-      if (!cpData?.is_playing || !cpData?.item?.id) return;
-
-      const inPool = pool.find(t => t.id === cpData.item.id);
-      if (inPool?.bpm != null && inPool.bpm >= HIGH_BPM_CUTOFF) {
-        console.log(`[Preload] Current track is HIGH BPM (${inPool.bpm}) — no auto-switch`);
-        return;
-      }
-
-      // Resolve device for the switch
-      const devRes = await fetch("https://api.spotify.com/v1/me/player/devices", {
-        headers: { Authorization: `Bearer ${session.accessToken}` },
-      });
-      if (!devRes.ok) return;
-      const { devices } = await devRes.json();
-      const device = devices?.find((d: any) => d.is_active) ?? devices?.[0];
-      if (!device) return;
-      if (!deviceIdRef.current) deviceIdRef.current = device.id;
-
-      const queue = buildQueue("warmup", pool, playedIdsRef.current);
-      if (queue.length === 0) return;
-      currentQueueRef.current = queue;
-
-      console.log("[Preload] Auto-switching from LOW/unknown to HIGH BPM");
-      await withMuteTransitionRef.current(async () => {
-        lastCommandRef.current = Date.now();
-        await fetch(`https://api.spotify.com/v1/me/player/play?device_id=${device.id}`, {
-          method: "PUT",
-          headers: { Authorization: `Bearer ${session.accessToken}`, "Content-Type": "application/json" },
-          body: JSON.stringify({ uris: queue }),
-        });
-      });
-    })();
+      // Immediately check if correction is needed rather than waiting for next poll
+      fetchCurrentTrackRef.current();
+    });
   }, [session?.accessToken]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Poll every 5s to detect track changes, refill queue, and track Spotify playing state.
@@ -524,6 +543,7 @@ function WorkoutInner() {
   const handleStart = async () => {
     if (!session?.accessToken) return;
     feedback("heavy");
+
     const devicesRes = await spotifyFetch("https://api.spotify.com/v1/me/player/devices", {
       headers: { Authorization: `Bearer ${session.accessToken}` },
     });
@@ -535,46 +555,39 @@ function WorkoutInner() {
     setNoDevice(false);
     deviceIdRef.current = device.id;
 
-    // Use preloaded pool if available, otherwise fetch now
+    // Pool should already be loaded from preload
     let pool = trackPoolRef.current;
     if (pool.length === 0) {
       pool = await fetchQueueAndEnrich();
-      if (pool.length === 0) {
-        setNoQueue(true);
-        return;
-      }
+      if (pool.length === 0) { setNoQueue(true); return; }
       trackPoolRef.current = pool;
     }
     setNoQueue(false);
     playedIdsRef.current = new Set();
-    currentQueueRef.current = [];
 
-    const queue = buildQueue("warmup", trackPoolRef.current, playedIdsRef.current);
-    if (queue.length === 0) {
-      // Tracks loaded but none have BPM data yet — resume whatever is playing
-      console.log("[Queue] No BPM data yet — resuming current playback");
-      await withMuteTransition(async () => {
-        await spotifyFetch(`https://api.spotify.com/v1/me/player/play?device_id=${device.id}`, {
-          method: "PUT",
-          headers: { Authorization: `Bearer ${session.accessToken}`, "Content-Type": "application/json" },
-          body: JSON.stringify({}),
-        });
-      });
+    if (correctionAppliedRef.current) {
+      // Correct HIGH BPM song is already playing from the pre-start auto-switch.
+      // Just start the workout — no song change, no mute, no delay.
+      console.log("[Start] Song pre-queued by auto-switch — starting timer only");
       setWorkoutState("warmup");
       return;
     }
 
-    currentQueueRef.current = queue;
-    await withMuteTransition(async () => {
-      lastCommandRef.current = Date.now();
-      await spotifyFetch(`https://api.spotify.com/v1/me/player/play?device_id=${device.id}`, {
-        method: "PUT",
-        headers: { Authorization: `Bearer ${session.accessToken}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ uris: queue }),
+    // Correction wasn't applied (e.g. music was paused before start) — switch now
+    const queue = buildQueue("warmup", pool, playedIdsRef.current);
+    if (queue.length > 0) {
+      currentQueueRef.current = queue;
+      await withMuteTransition(async () => {
+        lastCommandRef.current = Date.now();
+        await spotifyFetch(`https://api.spotify.com/v1/me/player/play?device_id=${device.id}`, {
+          method: "PUT",
+          headers: { Authorization: `Bearer ${session.accessToken}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ uris: queue }),
+        });
       });
-    });
+      console.log(`[Start] Queue built on start — ${queue.length} HIGH tracks`);
+    }
     setWorkoutState("warmup");
-    console.log(`[Queue] Workout started — ${queue.length} HIGH tracks queued`);
   };
 
   const handleStartSet = () => { feedback("heavy"); setWorkoutState("exercising"); };
