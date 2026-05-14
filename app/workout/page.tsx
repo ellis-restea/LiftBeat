@@ -401,6 +401,11 @@ function WorkoutInner() {
                   }
                 );
               });
+              // Optimistically update currentTrackRef so handleStart's BPM check
+              // sees the switched-to HIGH BPM track, not the old LOW BPM one
+              const firstId = queue[0]?.replace("spotify:track:", "");
+              const switchedTo = pool.find(t => t.id === firstId);
+              if (switchedTo) currentTrackRef.current = { id: switchedTo.id, name: switchedTo.name };
               correctionAppliedRef.current = true;
             }
           }
@@ -565,15 +570,17 @@ function WorkoutInner() {
     setNoQueue(false);
     playedIdsRef.current = new Set();
 
-    if (correctionAppliedRef.current) {
-      // Correct HIGH BPM song is already playing from the pre-start auto-switch.
-      // Just start the workout — no song change, no mute, no delay.
-      console.log("[Start] Song pre-queued by auto-switch — starting timer only");
+    // Synchronous BPM check — no async gap, no race with the correction polling loop.
+    // currentTrackRef is either the last polled track or the optimistically-set switched track.
+    const currentId = currentTrackRef.current?.id;
+    const inPool = currentId ? pool.find(t => t.id === currentId) : undefined;
+    if (currentId && inPool?.bpm != null && inPool.bpm >= HIGH_BPM_CUTOFF) {
+      console.log(`[Start] Playing HIGH BPM (${inPool.bpm}) — starting timer only`);
       setWorkoutState("warmup");
       return;
     }
 
-    // Correction wasn't applied (e.g. music was paused before start) — switch now
+    // Current track is LOW/unknown BPM or Spotify was paused — switch now
     const queue = buildQueue("warmup", pool, playedIdsRef.current);
     if (queue.length > 0) {
       currentQueueRef.current = queue;
