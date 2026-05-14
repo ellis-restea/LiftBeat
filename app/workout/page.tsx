@@ -176,6 +176,9 @@ function WorkoutInner() {
   const deviceIdRef = useRef<string | null>(null);
   const originalVolumeRef = useRef<number>(50);
   const isTransitioningRef = useRef(false);
+  const preloadedRef = useRef(false);
+  const currentTrackRef = useRef<any>(null);
+  const withMuteTransitionRef = useRef<(fn: () => Promise<void>) => Promise<void>>(async (fn) => fn());
 
   const currentExercise = exercises[currentExerciseIndex];
   const totalSets = exercises.reduce((acc, ex) => acc + ex.sets, 0);
@@ -273,6 +276,8 @@ function WorkoutInner() {
       isTransitioningRef.current = false;
     }
   }, [session, spotifyFetch]);
+
+  useEffect(() => { withMuteTransitionRef.current = withMuteTransition; }, [withMuteTransition]);
 
   // Play the correct BPM bucket for a given state by sending a full uris array to Spotify.
   // No context switching — we own the queue entirely.
@@ -414,6 +419,7 @@ function WorkoutInner() {
     }
 
     setNoDevice(false);
+    currentTrackRef.current = data?.item;
     setCurrentTrack(data?.item);
     setIsPlaying(data?.is_playing);
     setSongPosition(data?.progress_ms || 0);
@@ -431,6 +437,64 @@ function WorkoutInner() {
   useEffect(() => {
     if (session?.accessToken) fetchCurrentTrack();
   }, [fetchCurrentTrack]);
+
+  // Preload queue + BPM on page load so Start Workout is near-instant.
+  // Also auto-switches to HIGH BPM if Spotify is playing a LOW/unknown track.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!session?.accessToken || preloadedRef.current) return;
+    preloadedRef.current = true;
+
+    (async () => {
+      const pool = await fetchQueueAndEnrich();
+      if (pool.length === 0) return;
+      trackPoolRef.current = pool;
+      const high = pool.filter(t => t.bpm != null && t.bpm >= HIGH_BPM_CUTOFF);
+      const low  = pool.filter(t => t.bpm != null && t.bpm < HIGH_BPM_CUTOFF);
+      console.log(`[Preload] Ready — HIGH: ${high.length}, LOW: ${low.length} tracks`);
+
+      if (workoutStateRef.current !== "idle" || high.length === 0) return;
+
+      // Check what's currently playing to decide if auto-switch is needed
+      const cpRes = await fetch("https://api.spotify.com/v1/me/player/currently-playing", {
+        headers: { Authorization: `Bearer ${session.accessToken}` },
+        cache: "no-store",
+      });
+      if (!cpRes.ok || cpRes.status === 204) return;
+      const cpData = await cpRes.json();
+      if (!cpData?.is_playing || !cpData?.item?.id) return;
+
+      const inPool = pool.find(t => t.id === cpData.item.id);
+      if (inPool?.bpm != null && inPool.bpm >= HIGH_BPM_CUTOFF) {
+        console.log(`[Preload] Current track is HIGH BPM (${inPool.bpm}) — no auto-switch`);
+        return;
+      }
+
+      // Resolve device for the switch
+      const devRes = await fetch("https://api.spotify.com/v1/me/player/devices", {
+        headers: { Authorization: `Bearer ${session.accessToken}` },
+      });
+      if (!devRes.ok) return;
+      const { devices } = await devRes.json();
+      const device = devices?.find((d: any) => d.is_active) ?? devices?.[0];
+      if (!device) return;
+      if (!deviceIdRef.current) deviceIdRef.current = device.id;
+
+      const queue = buildQueue("warmup", pool, playedIdsRef.current);
+      if (queue.length === 0) return;
+      currentQueueRef.current = queue;
+
+      console.log("[Preload] Auto-switching from LOW/unknown to HIGH BPM");
+      await withMuteTransitionRef.current(async () => {
+        lastCommandRef.current = Date.now();
+        await fetch(`https://api.spotify.com/v1/me/player/play?device_id=${device.id}`, {
+          method: "PUT",
+          headers: { Authorization: `Bearer ${session.accessToken}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ uris: queue }),
+        });
+      });
+    })();
+  }, [session?.accessToken]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Poll every 5s to detect track changes, refill queue, and track Spotify playing state.
   useEffect(() => {
@@ -471,14 +535,17 @@ function WorkoutInner() {
     setNoDevice(false);
     deviceIdRef.current = device.id;
 
-    // Build pool from the live Spotify queue
-    const pool = await fetchQueueAndEnrich();
+    // Use preloaded pool if available, otherwise fetch now
+    let pool = trackPoolRef.current;
     if (pool.length === 0) {
-      setNoQueue(true);
-      return;
+      pool = await fetchQueueAndEnrich();
+      if (pool.length === 0) {
+        setNoQueue(true);
+        return;
+      }
+      trackPoolRef.current = pool;
     }
     setNoQueue(false);
-    trackPoolRef.current = pool;
     playedIdsRef.current = new Set();
     currentQueueRef.current = [];
 
@@ -578,26 +645,75 @@ function WorkoutInner() {
 
   const skipTrack = async () => {
     if (!session?.accessToken) return;
+    const vol = originalVolumeRef.current;
+    setIsTransitioning(true);
+    isTransitioningRef.current = true;
     lastCommandRef.current = Date.now() - 1200;
-    await spotifyFetch("https://api.spotify.com/v1/me/player/next", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${session.accessToken}` },
-    });
-    await new Promise((resolve) => setTimeout(resolve, 800));
-    lastCommandRef.current = 0;
-    fetchCurrentTrack();
+
+    try {
+      // Mute + skip fire in the same tick — zero async gap before mute
+      await Promise.all([
+        spotifyFetch(`https://api.spotify.com/v1/me/player/volume?volume_percent=0`, {
+          method: "PUT",
+          headers: { Authorization: `Bearer ${session.accessToken}` },
+        }),
+        spotifyFetch("https://api.spotify.com/v1/me/player/next", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${session.accessToken}` },
+        }),
+      ]);
+
+      await new Promise(r => setTimeout(r, 500));
+
+      for (let i = 1; i <= 5; i++) {
+        await spotifyFetch(
+          `https://api.spotify.com/v1/me/player/volume?volume_percent=${Math.round((vol * i) / 5)}`,
+          { method: "PUT", headers: { Authorization: `Bearer ${session.accessToken}` } },
+        );
+        if (i < 5) await new Promise(r => setTimeout(r, 80));
+      }
+    } finally {
+      lastCommandRef.current = 0;
+      setIsTransitioning(false);
+      isTransitioningRef.current = false;
+      fetchCurrentTrack();
+    }
   };
 
   const prevTrack = async () => {
     if (!session?.accessToken) return;
+    const vol = originalVolumeRef.current;
+    setIsTransitioning(true);
+    isTransitioningRef.current = true;
     lastCommandRef.current = Date.now();
-    await spotifyFetch("https://api.spotify.com/v1/me/player/previous", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${session.accessToken}` },
-    });
-    await new Promise((r) => setTimeout(r, 800));
-    lastCommandRef.current = 0;
-    fetchCurrentTrack();
+
+    try {
+      await Promise.all([
+        spotifyFetch(`https://api.spotify.com/v1/me/player/volume?volume_percent=0`, {
+          method: "PUT",
+          headers: { Authorization: `Bearer ${session.accessToken}` },
+        }),
+        spotifyFetch("https://api.spotify.com/v1/me/player/previous", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${session.accessToken}` },
+        }),
+      ]);
+
+      await new Promise(r => setTimeout(r, 500));
+
+      for (let i = 1; i <= 5; i++) {
+        await spotifyFetch(
+          `https://api.spotify.com/v1/me/player/volume?volume_percent=${Math.round((vol * i) / 5)}`,
+          { method: "PUT", headers: { Authorization: `Bearer ${session.accessToken}` } },
+        );
+        if (i < 5) await new Promise(r => setTimeout(r, 80));
+      }
+    } finally {
+      lastCommandRef.current = 0;
+      setIsTransitioning(false);
+      isTransitioningRef.current = false;
+      fetchCurrentTrack();
+    }
   };
 
   const getProgressFromX = (clientX: number): number => {
