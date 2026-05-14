@@ -72,36 +72,15 @@ async function fetchQueueAndEnrich(): Promise<TrackBpm[]> {
   }
 }
 
-// Build a queue of up to `count` track URIs for the given workout state.
-// Filters track pool by BPM bucket (HIGH for warmup/exercise, LOW for rest).
-// Excludes already-played tracks; falls back to full bucket if all played.
-// Distributes evenly across playlists via round-robin shuffle.
-function buildQueue(
-  state: WorkoutState,
-  pool: TrackBpm[],
-  excludeIds: Set<string>,
-  count = 10
-): string[] {
-  if (state === "idle" || state === "done") return [];
-  const wantHigh = state === "warmup" || state === "exercising";
-
-  let eligible = pool.filter(
-    (t) => t.bpm != null && (t.bpm >= HIGH_BPM_CUTOFF) === wantHigh && !excludeIds.has(t.id)
-  );
-  if (eligible.length === 0) {
-    // All played — reset replay history and use full bucket
-    eligible = pool.filter((t) => t.bpm != null && (t.bpm >= HIGH_BPM_CUTOFF) === wantHigh);
-  }
+// Shuffle eligible tracks and pick up to `count` URIs using round-robin across playlists.
+function shuffleAndPickUris(eligible: TrackBpm[], count = 10): string[] {
   if (eligible.length === 0) return [];
-
   const byPlaylist = new Map<string, TrackBpm[]>();
   for (const t of eligible) {
     const pid = t.playlistId ?? "__unknown__";
     if (!byPlaylist.has(pid)) byPlaylist.set(pid, []);
     byPlaylist.get(pid)!.push(t);
   }
-
-  // Shuffle each playlist's tracks independently
   const shuffled = [...byPlaylist.values()].map((arr) => {
     const copy = [...arr];
     for (let i = copy.length - 1; i > 0; i--) {
@@ -110,24 +89,29 @@ function buildQueue(
     }
     return copy;
   });
-
-  // Round-robin pick across playlists for even distribution
   const result: string[] = [];
   let i = 0;
   while (result.length < count) {
     let added = false;
     for (const arr of shuffled) {
       if (result.length >= count) break;
-      if (i < arr.length) {
-        result.push(`spotify:track:${arr[i].id}`);
-        added = true;
-      }
+      if (i < arr.length) { result.push(`spotify:track:${arr[i].id}`); added = true; }
     }
     if (!added) break;
     i++;
   }
-
   return result;
+}
+
+// Build a queue for the given state using the BPM bucket and excludeIds.
+// Falls back to the full bucket if all eligible tracks have been played.
+// Use recomputeQueues() for the precomputed queues — this is only for ad-hoc builds.
+function buildQueue(state: WorkoutState, pool: TrackBpm[], excludeIds: Set<string>, count = 10): string[] {
+  if (state === "idle" || state === "done") return [];
+  const wantHigh = state === "warmup" || state === "exercising";
+  let eligible = pool.filter(t => t.bpm != null && (t.bpm >= HIGH_BPM_CUTOFF) === wantHigh && !excludeIds.has(t.id));
+  if (eligible.length === 0) eligible = pool.filter(t => t.bpm != null && (t.bpm >= HIGH_BPM_CUTOFF) === wantHigh);
+  return shuffleAndPickUris(eligible, count);
 }
 
 export default function Workout() {
@@ -290,24 +274,44 @@ function WorkoutInner() {
   useEffect(() => { withMuteTransitionRef.current = withMuteTransition; }, [withMuteTransition]);
 
   // Rebuild both HIGH and LOW queues from the current pool and played-set.
-  // Called after any pool change or played-set reset so state transitions are instant.
+  // Each bucket independently tracks exhaustion: when every track of that BPM type has played,
+  // only that bucket's played IDs are cleared from the shared set — the other bucket is untouched.
   const recomputeQueues = useCallback(() => {
-    const high = buildQueue("warmup",  trackPoolRef.current, playedIdsRef.current);
-    const low  = buildQueue("resting", trackPoolRef.current, playedIdsRef.current);
-    precomputedHighRef.current = high;
-    precomputedLowRef.current  = low;
-    console.log(`[Precompute] HIGH: ${high.length}, LOW: ${low.length} URIs ready`);
+    const pool   = trackPoolRef.current;
+    const played = playedIdsRef.current;
+
+    const highPool = pool.filter(t => t.bpm != null && t.bpm >= HIGH_BPM_CUTOFF);
+    let highEligible = highPool.filter(t => !played.has(t.id));
+    if (highEligible.length === 0 && highPool.length > 0) {
+      console.log("[Replay] HIGH bucket exhausted — resetting played history for HIGH tracks only");
+      for (const t of highPool) played.delete(t.id);
+      highEligible = highPool;
+    }
+
+    const lowPool = pool.filter(t => t.bpm != null && t.bpm < HIGH_BPM_CUTOFF);
+    let lowEligible = lowPool.filter(t => !played.has(t.id));
+    if (lowEligible.length === 0 && lowPool.length > 0) {
+      console.log("[Replay] LOW bucket exhausted — resetting played history for LOW tracks only");
+      for (const t of lowPool) played.delete(t.id);
+      lowEligible = lowPool;
+    }
+
+    precomputedHighRef.current = shuffleAndPickUris(highEligible);
+    precomputedLowRef.current  = shuffleAndPickUris(lowEligible);
+    console.log(`[Precompute] HIGH: ${precomputedHighRef.current.length}, LOW: ${precomputedLowRef.current.length} URIs ready`);
   }, []);
 
   const recomputeQueuesRef = useRef(recomputeQueues);
   useEffect(() => { recomputeQueuesRef.current = recomputeQueues; }, [recomputeQueues]);
 
-  // Play the correct BPM bucket for a given state by sending a full uris array to Spotify.
-  // No context switching — we own the queue entirely.
+  // Play the correct BPM bucket for a given state.
+  // 1. Uses precomputed queue if ready (instant).
+  // 2. Retries up to 3× with a live Spotify queue refresh if the bucket is empty.
+  // 3. Falls back to muting + scanning upcoming tracks one-by-one until a match is found.
   const playForState = useCallback(async (state: WorkoutState) => {
     if (!session?.accessToken) return;
 
-    // Lazily resolve device if we don't have one cached
+    // Lazily resolve device
     if (!deviceIdRef.current) {
       try {
         const res = await spotifyFetch("https://api.spotify.com/v1/me/player/devices", {
@@ -323,41 +327,126 @@ function WorkoutInner() {
     if (!deviceIdRef.current) { console.log("[Queue] No device available"); return; }
 
     const wantHigh = state === "warmup" || state === "exercising";
-    // Use the pre-identified queue if available; fall back to building on the spot.
-    const precomputed = wantHigh ? precomputedHighRef.current : precomputedLowRef.current;
-    const queue = precomputed.length > 0
-      ? precomputed
-      : buildQueue(state, trackPoolRef.current, playedIdsRef.current);
+    const bucket = wantHigh ? "HIGH" : "LOW";
 
+    // Step 1: use precomputed queue
+    let queue = wantHigh ? precomputedHighRef.current : precomputedLowRef.current;
+    let source = queue.length > 0 ? "precomputed" : "";
+
+    // Step 2: retry up to 3× with a fresh Spotify queue pull
+    for (let attempt = 1; attempt <= 3 && queue.length === 0; attempt++) {
+      console.log(`[Queue] No ${bucket} tracks — refreshing Spotify queue (attempt ${attempt}/3)`);
+      const fresh = await fetchQueueAndEnrich();
+      const existingIds = new Set(trackPoolRef.current.map(t => t.id));
+      const added = fresh.filter(t => !existingIds.has(t.id));
+      if (added.length > 0) {
+        trackPoolRef.current = [...trackPoolRef.current, ...added];
+        console.log(`[Queue] Pool grew +${added.length} tracks from refresh`);
+      }
+      recomputeQueuesRef.current();
+      queue = wantHigh ? precomputedHighRef.current : precomputedLowRef.current;
+      if (queue.length > 0) source = `refresh-attempt-${attempt}`;
+    }
+
+    // Step 3: fallback — mute Spotify, skip forward one track at a time, unmute on BPM match
     if (queue.length === 0) {
-      const bucket = wantHigh ? "HIGH" : "LOW";
-      console.log(`[Queue] No ${bucket} BPM tracks in pool for state: ${state}`);
+      console.log(`[Fallback] No ${bucket} BPM tracks after retries — muting and scanning queue`);
+      const vol = originalVolumeRef.current;
+      setIsTransitioning(true);
+      isTransitioningRef.current = true;
+
+      try {
+        await spotifyFetch(`https://api.spotify.com/v1/me/player/volume?volume_percent=0`, {
+          method: "PUT",
+          headers: { Authorization: `Bearer ${session.accessToken}` },
+        });
+
+        let found = false;
+        for (let skip = 0; skip < 10 && !found; skip++) {
+          await spotifyFetch("https://api.spotify.com/v1/me/player/next", {
+            method: "POST",
+            headers: { Authorization: `Bearer ${session.accessToken}` },
+          });
+          await new Promise(r => setTimeout(r, 900));
+
+          const cpRes = await spotifyFetch("https://api.spotify.com/v1/me/player/currently-playing", {
+            headers: { Authorization: `Bearer ${session.accessToken}` },
+          });
+          if (!cpRes.ok || cpRes.status === 204) continue;
+          const cpData = await cpRes.json();
+          const trackId = cpData?.item?.id;
+          if (!trackId) continue;
+
+          // Look up BPM from pool; fetch from API if not cached
+          let trackBpm: number | null = null;
+          const inPool = trackPoolRef.current.find(t => t.id === trackId);
+          if (inPool?.bpm != null) {
+            trackBpm = inPool.bpm;
+          } else {
+            const bpmRes = await fetch("/api/playlist-bpm", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ tracks: [{ id: trackId, name: cpData.item.name, artists: cpData.item.artists?.map((a: any) => a.name) ?? [] }] }),
+            });
+            if (bpmRes.ok) {
+              const bpmData = await bpmRes.json();
+              const enriched = [...(bpmData.high ?? []), ...(bpmData.low ?? [])].find((t: TrackBpm) => t.id === trackId);
+              if (enriched) {
+                trackPoolRef.current = [...trackPoolRef.current, { ...enriched, playlistId: "queue" }];
+                trackBpm = enriched.bpm;
+              }
+            }
+          }
+
+          const isHigh = trackBpm != null && trackBpm >= HIGH_BPM_CUTOFF;
+          if (isHigh === wantHigh) {
+            console.log(`[Fallback] Found ${bucket} BPM track at skip ${skip + 1}: "${cpData.item.name}" (${trackBpm} BPM)`);
+            found = true;
+            recomputeQueuesRef.current();
+            for (let i = 1; i <= 5; i++) {
+              await spotifyFetch(
+                `https://api.spotify.com/v1/me/player/volume?volume_percent=${Math.round((vol * i) / 5)}`,
+                { method: "PUT", headers: { Authorization: `Bearer ${session.accessToken}` } },
+              );
+              if (i < 5) await new Promise(r => setTimeout(r, 80));
+            }
+          } else {
+            console.log(`[Fallback] Skip ${skip + 1}: "${cpData.item?.name}" — ${trackBpm ?? "unknown"} BPM, want ${bucket}`);
+          }
+        }
+
+        if (!found) {
+          console.log("[Fallback] No matching track found after 10 skips — restoring volume");
+          await spotifyFetch(`https://api.spotify.com/v1/me/player/volume?volume_percent=${vol}`, {
+            method: "PUT",
+            headers: { Authorization: `Bearer ${session.accessToken}` },
+          });
+        }
+      } finally {
+        setIsTransitioning(false);
+        isTransitioningRef.current = false;
+      }
       return;
     }
 
     currentQueueRef.current = queue;
-
-    // Log full queue with BPM for each track
     const queueDetails = queue.map((uri, i) => {
       const id = uri.replace("spotify:track:", "");
       const t = trackPoolRef.current.find((x) => x.id === id);
       return { "#": i + 1, name: t?.name ?? "?", artists: t?.artists?.join(", ") ?? "?", bpm: t?.bpm ?? "?", playlist: t?.playlistId ?? "?" };
     });
-    console.log(`[Queue] ${state} (${queue.length} tracks, ${precomputed.length > 0 ? "precomputed" : "built now"}):`, queueDetails);
+    console.log(`[Queue] ${state} (${queue.length} tracks, ${source}):`, queueDetails);
 
     await withMuteTransition(async () => {
       lastCommandRef.current = Date.now();
       await spotifyFetch(`https://api.spotify.com/v1/me/player/play?device_id=${deviceIdRef.current}`, {
         method: "PUT",
-        headers: {
-          Authorization: `Bearer ${session.accessToken}`,
-          "Content-Type": "application/json",
-        },
+        headers: { Authorization: `Bearer ${session.accessToken}`, "Content-Type": "application/json" },
         body: JSON.stringify({ uris: queue }),
       });
     });
 
-    // Rebuild queues for the next state change now that this one has consumed the precomputed list
+    // Rebuild queues for the next state change
     recomputeQueuesRef.current();
   }, [session, spotifyFetch, withMuteTransition, recomputeQueues]);
 
@@ -542,23 +631,38 @@ function WorkoutInner() {
   }, [fetchCurrentTrack]);
 
   // Preload queue + BPM on page load so Start Workout is near-instant.
-  // After the pool is ready, immediately triggers a fetchCurrentTrack call so the
-  // correction logic runs without waiting for the next 5s poll.
+  // If either HIGH or LOW bucket is empty after the initial fetch, retries up to 2×
+  // before triggering the correction check — catches queue snapshots with no BPM variance.
   useEffect(() => {
     if (!session?.accessToken || preloadedRef.current) return;
     preloadedRef.current = true;
     console.log(`[⏱ preload] ${ts()} — starting fetchQueueAndEnrich`);
 
-    fetchQueueAndEnrich().then((pool) => {
-      if (pool.length === 0) { console.log(`[⏱ preload] ${ts()} — 0 tracks returned, aborting`); return; }
-      trackPoolRef.current = pool;
-      const high = pool.filter(t => t.bpm != null && t.bpm >= HIGH_BPM_CUTOFF);
-      const low  = pool.filter(t => t.bpm != null && t.bpm < HIGH_BPM_CUTOFF);
-      console.log(`[⏱ preload] ${ts()} — pool ready: HIGH: ${high.length}, LOW: ${low.length}`);
+    (async () => {
+      const initial = await fetchQueueAndEnrich();
+      if (initial.length === 0) { console.log(`[⏱ preload] ${ts()} — 0 tracks returned, aborting`); return; }
+      trackPoolRef.current = initial;
+
+      let high = initial.filter(t => t.bpm != null && t.bpm >= HIGH_BPM_CUTOFF);
+      let low  = initial.filter(t => t.bpm != null && t.bpm  < HIGH_BPM_CUTOFF);
+      console.log(`[⏱ preload] ${ts()} — initial pool: HIGH: ${high.length}, LOW: ${low.length}`);
+
+      // If either bucket is zero, refresh the queue snapshot up to 2 more times
+      for (let attempt = 1; attempt <= 2 && (high.length === 0 || low.length === 0); attempt++) {
+        console.log(`[⏱ preload] ${ts()} — bucket imbalance — refresh attempt ${attempt}/2`);
+        const fresh = await fetchQueueAndEnrich();
+        const existingIds = new Set(trackPoolRef.current.map(t => t.id));
+        const added = fresh.filter(t => !existingIds.has(t.id));
+        if (added.length > 0) trackPoolRef.current = [...trackPoolRef.current, ...added];
+        high = trackPoolRef.current.filter(t => t.bpm != null && t.bpm >= HIGH_BPM_CUTOFF);
+        low  = trackPoolRef.current.filter(t => t.bpm != null && t.bpm  < HIGH_BPM_CUTOFF);
+        console.log(`[⏱ preload] ${ts()} — after refresh ${attempt}: HIGH: ${high.length}, LOW: ${low.length}`);
+      }
+
       recomputeQueuesRef.current();
       console.log(`[⏱ preload] ${ts()} — triggering immediate correction check`);
       fetchCurrentTrackRef.current();
-    });
+    })();
   }, [session?.accessToken]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Poll every 5s to detect track changes, refill queue, and track Spotify playing state.
