@@ -154,6 +154,8 @@ function WorkoutInner() {
   const [noDevice, setNoDevice] = useState(false);
   const [premiumRequired, setPremiumRequired] = useState(false);
   const [noQueue, setNoQueue] = useState(false);
+  const [isTransitioning, setIsTransitioning] = useState(false);
+  const [spotifyPlaying, setSpotifyPlaying] = useState<boolean | null>(null);
 
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const lastCommandRef = useRef<number>(0);
@@ -172,6 +174,8 @@ function WorkoutInner() {
   const playedIdsRef = useRef<Set<string>>(new Set());
   // Active Spotify device ID (set on Start Workout)
   const deviceIdRef = useRef<string | null>(null);
+  const originalVolumeRef = useRef<number>(50);
+  const isTransitioningRef = useRef(false);
 
   const currentExercise = exercises[currentExerciseIndex];
   const totalSets = exercises.reduce((acc, ex) => acc + ex.sets, 0);
@@ -216,6 +220,60 @@ function WorkoutInner() {
     return res;
   }, []);
 
+  // Mute → run play command → wait for track start → fade volume back up.
+  // Guarantees volume is always restored even if the transition errors.
+  const withMuteTransition = useCallback(async (playFn: () => Promise<void>) => {
+    if (!session?.accessToken) { await playFn(); return; }
+
+    let vol = originalVolumeRef.current;
+    let volumeRestored = false;
+    setIsTransitioning(true);
+    isTransitioningRef.current = true;
+
+    try {
+      // Snapshot current volume before muting
+      const pRes = await fetch("https://api.spotify.com/v1/me/player", {
+        headers: { Authorization: `Bearer ${session.accessToken}` },
+      });
+      if (pRes.ok) {
+        const pd = await pRes.json();
+        const v = pd?.device?.volume_percent;
+        if (typeof v === "number" && v > 0) { vol = v; originalVolumeRef.current = v; }
+      }
+
+      // Mute immediately
+      await spotifyFetch(`https://api.spotify.com/v1/me/player/volume?volume_percent=0`, {
+        method: "PUT",
+        headers: { Authorization: `Bearer ${session.accessToken}` },
+      });
+
+      // Execute the play command
+      await playFn();
+
+      // Give Spotify time to start the new track
+      await new Promise(r => setTimeout(r, 500));
+
+      // Fade volume back up over 400ms (5 steps × 80ms)
+      for (let i = 1; i <= 5; i++) {
+        await spotifyFetch(
+          `https://api.spotify.com/v1/me/player/volume?volume_percent=${Math.round((vol * i) / 5)}`,
+          { method: "PUT", headers: { Authorization: `Bearer ${session.accessToken}` } },
+        );
+        if (i < 5) await new Promise(r => setTimeout(r, 80));
+      }
+      volumeRestored = true;
+    } finally {
+      if (!volumeRestored) {
+        fetch(`https://api.spotify.com/v1/me/player/volume?volume_percent=${vol}`, {
+          method: "PUT",
+          headers: { Authorization: `Bearer ${session!.accessToken!}` },
+        }).catch(() => {});
+      }
+      setIsTransitioning(false);
+      isTransitioningRef.current = false;
+    }
+  }, [session, spotifyFetch]);
+
   // Play the correct BPM bucket for a given state by sending a full uris array to Spotify.
   // No context switching — we own the queue entirely.
   const playForState = useCallback(async (state: WorkoutState) => {
@@ -252,16 +310,18 @@ function WorkoutInner() {
     });
     console.log(`[Queue] ${state} (${queue.length} tracks):`, queueDetails);
 
-    lastCommandRef.current = Date.now();
-    await spotifyFetch(`https://api.spotify.com/v1/me/player/play?device_id=${deviceIdRef.current}`, {
-      method: "PUT",
-      headers: {
-        Authorization: `Bearer ${session.accessToken}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ uris: queue }),
+    await withMuteTransition(async () => {
+      lastCommandRef.current = Date.now();
+      await spotifyFetch(`https://api.spotify.com/v1/me/player/play?device_id=${deviceIdRef.current}`, {
+        method: "PUT",
+        headers: {
+          Authorization: `Bearer ${session.accessToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ uris: queue }),
+      });
     });
-  }, [session, spotifyFetch]);
+  }, [session, spotifyFetch, withMuteTransition]);
 
   const playForStateRef = useRef(playForState);
   useEffect(() => { playForStateRef.current = playForState; }, [playForState]);
@@ -276,10 +336,19 @@ function WorkoutInner() {
     const res = await spotifyFetch("https://api.spotify.com/v1/me/player/currently-playing", {
       headers: { Authorization: `Bearer ${session.accessToken}` },
     });
-    if (res.status === 204) { if (workoutStateRef.current === "idle") setNoDevice(true); return; }
+    if (res.status === 204) {
+      setSpotifyPlaying(false);
+      if (workoutStateRef.current === "idle") setNoDevice(true);
+      return;
+    }
     if (res.status !== 200) return;
 
     const data = await res.json();
+    setSpotifyPlaying(data?.is_playing ?? false);
+
+    // Freeze all UI and queue logic while a mute transition is in progress
+    if (isTransitioningRef.current) return;
+
     const newId = data?.item?.id;
 
     if (newId && newId !== prevTrackIdRef.current) {
@@ -363,9 +432,9 @@ function WorkoutInner() {
     if (session?.accessToken) fetchCurrentTrack();
   }, [fetchCurrentTrack]);
 
-  // Poll every 5s during active workout to detect natural track changes and trigger queue refills.
+  // Poll every 5s to detect track changes, refill queue, and track Spotify playing state.
   useEffect(() => {
-    if (!session?.accessToken || workoutState === "idle" || workoutState === "done") return;
+    if (!session?.accessToken || workoutState === "done") return;
     const id = setInterval(() => fetchCurrentTrackRef.current(), 5000);
     return () => clearInterval(id);
   }, [session?.accessToken, workoutState]);
@@ -417,21 +486,25 @@ function WorkoutInner() {
     if (queue.length === 0) {
       // Tracks loaded but none have BPM data yet — resume whatever is playing
       console.log("[Queue] No BPM data yet — resuming current playback");
-      await spotifyFetch(`https://api.spotify.com/v1/me/player/play?device_id=${device.id}`, {
-        method: "PUT",
-        headers: { Authorization: `Bearer ${session.accessToken}`, "Content-Type": "application/json" },
-        body: JSON.stringify({}),
+      await withMuteTransition(async () => {
+        await spotifyFetch(`https://api.spotify.com/v1/me/player/play?device_id=${device.id}`, {
+          method: "PUT",
+          headers: { Authorization: `Bearer ${session.accessToken}`, "Content-Type": "application/json" },
+          body: JSON.stringify({}),
+        });
       });
       setWorkoutState("warmup");
       return;
     }
 
     currentQueueRef.current = queue;
-    lastCommandRef.current = Date.now();
-    await spotifyFetch(`https://api.spotify.com/v1/me/player/play?device_id=${device.id}`, {
-      method: "PUT",
-      headers: { Authorization: `Bearer ${session.accessToken}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ uris: queue }),
+    await withMuteTransition(async () => {
+      lastCommandRef.current = Date.now();
+      await spotifyFetch(`https://api.spotify.com/v1/me/player/play?device_id=${device.id}`, {
+        method: "PUT",
+        headers: { Authorization: `Bearer ${session.accessToken}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ uris: queue }),
+      });
     });
     setWorkoutState("warmup");
     console.log(`[Queue] Workout started — ${queue.length} HIGH tracks queued`);
@@ -670,7 +743,7 @@ function WorkoutInner() {
       )}
 
       {/* Top */}
-      <div className={`text-center w-full ${(noDevice || premiumRequired) ? "mt-12" : "mt-4"}`}>
+      <div className={`text-center w-full ${(noDevice || noQueue || premiumRequired) ? "mt-12" : "mt-4"}`}>
         <p className="text-gray-400 text-xs uppercase tracking-widest mb-2">
           Exercise {currentExerciseIndex + 1} of {exercises.length}
         </p>
@@ -699,18 +772,27 @@ function WorkoutInner() {
           </p>
         )}
 
-        {currentTrack?.album?.images?.[0] ? (
-          <img
-            src={currentTrack.album.images[0].url}
-            className="w-52 h-52 rounded-2xl shadow-2xl"
-          />
-        ) : (
-          <div className="w-52 h-52 rounded-2xl bg-gray-800 flex items-center justify-center text-5xl">
-            ♪
-          </div>
-        )}
+        <div className="relative">
+          {currentTrack?.album?.images?.[0] ? (
+            <img
+              src={currentTrack.album.images[0].url}
+              className={`w-52 h-52 rounded-2xl shadow-2xl transition-opacity duration-300 ${isTransitioning ? "opacity-30" : "opacity-100"}`}
+            />
+          ) : (
+            <div className="w-52 h-52 rounded-2xl bg-gray-800 flex items-center justify-center text-5xl">
+              ♪
+            </div>
+          )}
+          {isTransitioning && (
+            <div className="absolute inset-0 flex items-center justify-center rounded-2xl">
+              <p className="text-white/90 text-xs font-semibold tracking-wide text-center px-4">
+                Getting your music ready…
+              </p>
+            </div>
+          )}
+        </div>
 
-        <div className="text-center">
+        <div className={`text-center transition-opacity duration-300 ${isTransitioning ? "opacity-30 animate-pulse" : ""}`}>
           <p className="font-semibold text-lg">{currentTrack?.name || "No track playing"}</p>
           <p className="text-gray-400 text-sm">{currentTrack?.artists?.[0]?.name}</p>
         </div>
@@ -777,10 +859,24 @@ function WorkoutInner() {
 
       {/* Bottom */}
       <div className="w-full max-w-sm mb-4 flex flex-col gap-4">
+        {workoutState === "idle" && spotifyPlaying === false && (
+          <div className="card-metallic rounded-2xl p-4 text-center flex flex-col gap-3">
+            <p className="text-amber-400 text-sm font-medium">
+              Open Spotify and play a playlist to begin
+            </p>
+            <a
+              href="spotify://"
+              className="inline-block bg-[#1DB954] text-white text-sm font-bold px-5 py-2.5 rounded-xl active:scale-95 transition-transform"
+            >
+              Open Spotify
+            </a>
+          </div>
+        )}
         {workoutState === "idle" && (
           <button
             onClick={handleStart}
-            className="w-full bg-blue-500 hover:bg-blue-400 text-white font-bold py-5 rounded-2xl text-xl touch-manipulation active:scale-95 transition-transform btn-animated"
+            disabled={spotifyPlaying !== true || isTransitioning}
+            className="w-full bg-blue-500 hover:bg-blue-400 disabled:opacity-40 disabled:cursor-not-allowed text-white font-bold py-5 rounded-2xl text-xl touch-manipulation active:scale-95 transition-all btn-animated"
           >
             Start Workout 🔥
           </button>
