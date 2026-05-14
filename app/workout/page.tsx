@@ -811,6 +811,43 @@ function WorkoutInner() {
     });
   };
 
+  // After a skip/prev, check the incoming track's BPM against the current workout state.
+  // If it's the wrong bucket, hand off to playForState (precomputed queue + retry + fallback)
+  // which handles the switch and unmute. Returns true if a correction was made (caller skips fade-up).
+  const verifyAndCorrectBpm = useCallback(async (vol: number): Promise<boolean> => {
+    const ws = workoutStateRef.current;
+    if (ws === "idle" || ws === "done") return false;
+
+    const cpRes = await spotifyFetch("https://api.spotify.com/v1/me/player/currently-playing", {
+      headers: { Authorization: `Bearer ${session?.accessToken ?? ""}` },
+    });
+    if (!cpRes.ok || cpRes.status === 204) return false;
+
+    const cpData = await cpRes.json();
+    const trackId = cpData?.item?.id;
+    const inPool = trackId ? trackPoolRef.current.find(t => t.id === trackId) : undefined;
+    if (!inPool?.bpm) return false; // unknown BPM — let it play
+
+    const wantHigh = ws === "warmup" || ws === "exercising";
+    const isHigh = inPool.bpm >= HIGH_BPM_CUTOFF;
+    if (isHigh === wantHigh) return false; // correct bucket — no correction needed
+
+    console.log(`[BPM check] "${cpData.item?.name}" is ${isHigh ? "HIGH" : "LOW"} (${inPool.bpm} BPM) but state is ${ws} — correcting`);
+    // Already muted. playForState → withMuteTransition reads originalVolumeRef (not current 0) → restores correctly.
+    await playForStateRef.current(ws);
+    return true;
+  }, [session, spotifyFetch]);
+
+  const fadeUp = useCallback(async (vol: number) => {
+    for (let i = 1; i <= 5; i++) {
+      await spotifyFetch(
+        `https://api.spotify.com/v1/me/player/volume?volume_percent=${Math.round((vol * i) / 5)}`,
+        { method: "PUT", headers: { Authorization: `Bearer ${session?.accessToken ?? ""}` } },
+      );
+      if (i < 5) await new Promise(r => setTimeout(r, 80));
+    }
+  }, [session, spotifyFetch]);
+
   const skipTrack = async () => {
     if (!session?.accessToken) return;
     const vol = originalVolumeRef.current;
@@ -833,13 +870,9 @@ function WorkoutInner() {
 
       await new Promise(r => setTimeout(r, 500));
 
-      for (let i = 1; i <= 5; i++) {
-        await spotifyFetch(
-          `https://api.spotify.com/v1/me/player/volume?volume_percent=${Math.round((vol * i) / 5)}`,
-          { method: "PUT", headers: { Authorization: `Bearer ${session.accessToken}` } },
-        );
-        if (i < 5) await new Promise(r => setTimeout(r, 80));
-      }
+      // Verify the incoming track's BPM matches the current state before unmuting
+      const corrected = await verifyAndCorrectBpm(vol);
+      if (!corrected) await fadeUp(vol);
     } finally {
       lastCommandRef.current = 0;
       setIsTransitioning(false);
@@ -869,13 +902,9 @@ function WorkoutInner() {
 
       await new Promise(r => setTimeout(r, 500));
 
-      for (let i = 1; i <= 5; i++) {
-        await spotifyFetch(
-          `https://api.spotify.com/v1/me/player/volume?volume_percent=${Math.round((vol * i) / 5)}`,
-          { method: "PUT", headers: { Authorization: `Bearer ${session.accessToken}` } },
-        );
-        if (i < 5) await new Promise(r => setTimeout(r, 80));
-      }
+      // Verify the incoming track's BPM matches the current state before unmuting
+      const corrected = await verifyAndCorrectBpm(vol);
+      if (!corrected) await fadeUp(vol);
     } finally {
       lastCommandRef.current = 0;
       setIsTransitioning(false);
