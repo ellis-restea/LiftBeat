@@ -38,15 +38,34 @@ function formatMs(ms: number) {
 
 const HIGH_BPM_CUTOFF = 120;
 
-async function fetchPlaylistTracks(
-  playlistId: string
-): Promise<{ tracks: { id: string; name: string; artists: string[] }[] }> {
-  const res = await fetch(`/api/playlist-tracks?id=${playlistId}`);
-  if (!res.ok) {
-    console.log(`[PlaylistBPM] /api/playlist-tracks returned ${res.status} for ${playlistId}`);
-    return { tracks: [] };
+async function fetchQueueAndEnrich(): Promise<TrackBpm[]> {
+  try {
+    const qRes = await fetch("/api/queue-tracks");
+    if (!qRes.ok) {
+      console.log("[Queue] /api/queue-tracks returned", qRes.status);
+      return [];
+    }
+    const { tracks } = await qRes.json();
+    if (!tracks?.length) return [];
+
+    const bpmRes = await fetch("/api/playlist-bpm", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tracks }),
+    });
+    if (!bpmRes.ok) return [];
+
+    const result = await bpmRes.json();
+    console.log(
+      `[Queue] Enriched from Spotify queue — HIGH: ${result.high?.length ?? 0}, LOW: ${result.low?.length ?? 0}, UNKNOWN: ${result.unknown?.length ?? 0}`,
+    );
+    return [
+      ...(result.high ?? []).map((t: TrackBpm) => ({ ...t, playlistId: "queue" })),
+      ...(result.low  ?? []).map((t: TrackBpm) => ({ ...t, playlistId: "queue" })),
+    ];
+  } catch {
+    return [];
   }
-  return res.json();
 }
 
 // Build a queue of up to `count` track URIs for the given workout state.
@@ -134,6 +153,7 @@ function WorkoutInner() {
   const [setsCompleted, setSetsCompleted] = useState(0);
   const [noDevice, setNoDevice] = useState(false);
   const [premiumRequired, setPremiumRequired] = useState(false);
+  const [noQueue, setNoQueue] = useState(false);
 
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const lastCommandRef = useRef<number>(0);
@@ -152,8 +172,6 @@ function WorkoutInner() {
   const playedIdsRef = useRef<Set<string>>(new Set());
   // Active Spotify device ID (set on Start Workout)
   const deviceIdRef = useRef<string | null>(null);
-  // Sorted playlist IDs currently loaded — prevents redundant preloads
-  const loadedPlaylistIdsRef = useRef<string>("");
 
   const currentExercise = exercises[currentExerciseIndex];
   const totalSets = exercises.reduce((acc, ex) => acc + ex.sets, 0);
@@ -181,68 +199,6 @@ function WorkoutInner() {
       });
   }, [workoutId]);
 
-  // Preload BPM data for all selected playlists into trackPoolRef.
-  // Re-runs on session change; deduped by sorted playlist IDs.
-  useEffect(() => {
-    if (!session?.user?.name) return;
-    const userId = session.user.name;
-
-    supabase
-      .from("user_playlists")
-      .select("playlist_ids")
-      .eq("user_id", userId)
-      .single()
-      .then(async ({ data, error }) => {
-        if (error || !data?.playlist_ids?.length) {
-          console.log("[PlaylistBPM] No saved playlists for:", userId);
-          return;
-        }
-
-        const playlistIds: string[] = data.playlist_ids;
-        const sortedKey = [...playlistIds].sort().join(",");
-        if (loadedPlaylistIdsRef.current === sortedKey) return;
-        loadedPlaylistIdsRef.current = sortedKey;
-        trackPoolRef.current = [];
-        playedIdsRef.current = new Set();
-        currentQueueRef.current = [];
-        console.log(`[PlaylistBPM] Loading ${playlistIds.length} playlist(s):`, playlistIds);
-
-        const allTracks: TrackBpm[] = [];
-
-        for (const pid of playlistIds) {
-          try {
-            const { tracks } = await fetchPlaylistTracks(pid);
-            if (!tracks.length) continue;
-            console.log(`[PlaylistBPM] ${tracks.length} tracks from ${pid}`);
-
-            const res = await fetch("/api/playlist-bpm", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ tracks }),
-            });
-            if (!res.ok) continue;
-
-            const result = await res.json();
-            const tagged = [
-              ...(result.high ?? []).map((t: TrackBpm) => ({ ...t, playlistId: pid })),
-              ...(result.low  ?? []).map((t: TrackBpm) => ({ ...t, playlistId: pid })),
-            ];
-            allTracks.push(...tagged);
-            console.log(
-              `[PlaylistBPM] ${pid} → HIGH: ${result.high?.length ?? 0}, LOW: ${result.low?.length ?? 0}, UNKNOWN: ${result.unknown?.length ?? 0}`,
-              `| cache: ${result.fromCache}, fresh: ${result.fromApi}`
-            );
-          } catch (err) {
-            console.log(`[PlaylistBPM] Error for ${pid}:`, err);
-          }
-        }
-
-        trackPoolRef.current = allTracks;
-        const high = allTracks.filter((t) => t.bpm != null && t.bpm >= HIGH_BPM_CUTOFF).length;
-        const low  = allTracks.filter((t) => t.bpm != null && (t.bpm as number) < HIGH_BPM_CUTOFF).length;
-        console.log(`[PlaylistBPM] Pool ready — ${high} HIGH / ${low} LOW (${allTracks.length} total)`);
-      });
-  }, [session]);
 
   // Global Spotify fetch wrapper — respects rate-limit headers.
   const spotifyFetch = useCallback(async (url: string, options?: RequestInit): Promise<Response> => {
@@ -336,6 +292,18 @@ function WorkoutInner() {
         `[Track] ♪ "${data?.item?.name}" by ${data?.item?.artists?.[0]?.name}`,
         `| state: ${ws} | pool: ${trackPoolRef.current.length} tracks`
       );
+
+      // Passively expand pool by merging any new tracks from the live Spotify queue
+      if (ws !== "idle" && ws !== "done") {
+        fetchQueueAndEnrich().then((newTracks) => {
+          const existingIds = new Set(trackPoolRef.current.map((t) => t.id));
+          const added = newTracks.filter((t) => !existingIds.has(t.id));
+          if (added.length > 0) {
+            trackPoolRef.current = [...trackPoolRef.current, ...added];
+            console.log(`[Queue] Pool expanded +${added.length} tracks (total: ${trackPoolRef.current.length})`);
+          }
+        });
+      }
 
       // Refill queue when fewer than 5 tracks remain ahead of the current position
       if (ws !== "idle" && ws !== "done" && deviceIdRef.current) {
@@ -434,10 +402,21 @@ function WorkoutInner() {
     setNoDevice(false);
     deviceIdRef.current = device.id;
 
+    // Build pool from the live Spotify queue
+    const pool = await fetchQueueAndEnrich();
+    if (pool.length === 0) {
+      setNoQueue(true);
+      return;
+    }
+    setNoQueue(false);
+    trackPoolRef.current = pool;
+    playedIdsRef.current = new Set();
+    currentQueueRef.current = [];
+
     const queue = buildQueue("warmup", trackPoolRef.current, playedIdsRef.current);
     if (queue.length === 0) {
-      // Pool still loading — just resume/start whatever is playing and enter warmup
-      console.log("[Queue] Pool empty on start — resuming current playback");
+      // Tracks loaded but none have BPM data yet — resume whatever is playing
+      console.log("[Queue] No BPM data yet — resuming current playback");
       await spotifyFetch(`https://api.spotify.com/v1/me/player/play?device_id=${device.id}`, {
         method: "PUT",
         headers: { Authorization: `Bearer ${session.accessToken}`, "Content-Type": "application/json" },
@@ -674,7 +653,7 @@ function WorkoutInner() {
         ))}
       </div>
       <div className="relative min-h-screen text-white flex flex-col items-center justify-between p-8" style={{ zIndex: 1 }}>
-      {(noDevice || premiumRequired) && (
+      {(noDevice || noQueue || premiumRequired) && (
         <div
           className={`fixed top-0 left-0 right-0 z-50 backdrop-blur-sm text-sm text-center py-2.5 px-4 ${
             premiumRequired
@@ -684,6 +663,8 @@ function WorkoutInner() {
         >
           {premiumRequired
             ? "LiftSync requires Spotify Premium"
+            : noQueue
+            ? "Start playing a playlist in Spotify first, then tap Start Workout"
             : "Open Spotify on your device, then tap Start Workout"}
         </div>
       )}
