@@ -73,7 +73,7 @@ function PlaylistSelectInner() {
       .upsert({ user_id: session.user.name, playlist_ids: selected }, { onConflict: "user_id" });
 
     // Kick off BPM prefetch in background — don't await so navigation isn't blocked
-    prefetchPlaylistsBpm(selected, session.accessToken!);
+    prefetchPlaylistsBpm(selected);
 
     router.push(mode === "edit" ? "/dashboard" : "/workout-setup");
   };

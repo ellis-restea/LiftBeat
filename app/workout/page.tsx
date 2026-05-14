@@ -38,30 +38,15 @@ function formatMs(ms: number) {
 
 const HIGH_BPM_CUTOFF = 120;
 
-async function fetchClientPlaylistTracks(
-  playlistId: string,
-  accessToken: string
-): Promise<{ tracks: { id: string; name: string; artists: string[] }[]; firstStatus: number }> {
-  const tracks: { id: string; name: string; artists: string[] }[] = [];
-  let url: string | null = `https://api.spotify.com/v1/playlists/${playlistId}/tracks?limit=100`;
-  let firstStatus = 0;
-  while (url) {
-    const res = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
-    if (firstStatus === 0) firstStatus = res.status;
-    if (!res.ok) break;
-    const data = await res.json();
-    for (const item of data.items ?? []) {
-      if (item?.track?.id) {
-        tracks.push({
-          id: item.track.id,
-          name: item.track.name,
-          artists: item.track.artists?.map((a: any) => a.name) ?? [],
-        });
-      }
-    }
-    url = data.next ?? null;
+async function fetchPlaylistTracks(
+  playlistId: string
+): Promise<{ tracks: { id: string; name: string; artists: string[] }[] }> {
+  const res = await fetch(`/api/playlist-tracks?id=${playlistId}`);
+  if (!res.ok) {
+    console.log(`[PlaylistBPM] /api/playlist-tracks returned ${res.status} for ${playlistId}`);
+    return { tracks: [] };
   }
-  return { tracks, firstStatus };
+  return res.json();
 }
 
 // Build a queue of up to `count` track URIs for the given workout state.
@@ -199,7 +184,7 @@ function WorkoutInner() {
   // Preload BPM data for all selected playlists into trackPoolRef.
   // Re-runs on session change; deduped by sorted playlist IDs.
   useEffect(() => {
-    if (!session?.accessToken || !session?.user?.name) return;
+    if (!session?.user?.name) return;
     const userId = session.user.name;
 
     supabase
@@ -226,11 +211,7 @@ function WorkoutInner() {
 
         for (const pid of playlistIds) {
           try {
-            const { tracks, firstStatus } = await fetchClientPlaylistTracks(pid, session.accessToken);
-            if (firstStatus === 403) {
-              console.log("[PlaylistBPM] 403 — missing playlist-read-private scope. Sign out and back in.");
-              continue;
-            }
+            const { tracks } = await fetchPlaylistTracks(pid);
             if (!tracks.length) continue;
             console.log(`[PlaylistBPM] ${tracks.length} tracks from ${pid}`);
 

@@ -1,7 +1,7 @@
 import NextAuth from "next-auth";
 import SpotifyProvider from "next-auth/providers/spotify";
 
-const handler = NextAuth({
+export const authOptions = {
   providers: [
     SpotifyProvider({
       clientId: process.env.SPOTIFY_CLIENT_ID,
@@ -20,6 +20,7 @@ const handler = NextAuth({
         token.accessToken = account.access_token;
         token.refreshToken = account.refresh_token;
         token.expiresAt = account.expires_at;
+        token.scope = account.scope;
       }
 
       if (Date.now() < token.expiresAt * 1000) {
@@ -38,7 +39,6 @@ const handler = NextAuth({
           body: new URLSearchParams({
             grant_type: "refresh_token",
             refresh_token: token.refreshToken,
-            scope: "user-read-private user-read-playback-state user-modify-playback-state playlist-read-private playlist-read-collaborative streaming",
           }),
         });
 
@@ -47,6 +47,7 @@ const handler = NextAuth({
           ...token,
           accessToken: refreshed.access_token,
           expiresAt: Math.floor(Date.now() / 1000 + refreshed.expires_in),
+          ...(refreshed.scope && { scope: refreshed.scope }),
         };
       } catch {
         return { ...token, error: "RefreshAccessTokenError" };
@@ -54,9 +55,11 @@ const handler = NextAuth({
     },
     async session({ session, token }) {
       session.accessToken = token.accessToken;
+      session.scope = token.scope;
       return session;
     },
   },
-});
+};
 
+const handler = NextAuth(authOptions);
 export { handler as GET, handler as POST };

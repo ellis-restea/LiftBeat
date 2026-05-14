@@ -61,7 +61,7 @@ export default function MusicTab({ onDone }: Props) {
       .upsert({ user_id: session.user.name, playlist_ids: selected }, { onConflict: "user_id" });
 
     // Kick off BPM prefetch in background — don't await so the save confirmation shows immediately
-    prefetchPlaylistsBpm(selected, session.accessToken!);
+    prefetchPlaylistsBpm(selected);
 
     setSaving(false);
     setSaved(true);
