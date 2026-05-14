@@ -183,6 +183,9 @@ function WorkoutInner() {
   const preloadedRef = useRef(false);
   const currentTrackRef = useRef<any>(null);
   const withMuteTransitionRef = useRef<(fn: () => Promise<void>) => Promise<void>>(async (fn) => fn());
+  // Pre-identified queues for the next HIGH and LOW state — rebuilt whenever pool or playedIds changes.
+  const precomputedHighRef = useRef<string[]>([]);
+  const precomputedLowRef  = useRef<string[]>([]);
   // True once we've confirmed (and optionally corrected) the BPM of the playing track in idle state.
   // Prevents repeated correction attempts and signals handleStart to skip the song switch.
   const correctionAppliedRef = useRef(false);
@@ -286,6 +289,19 @@ function WorkoutInner() {
 
   useEffect(() => { withMuteTransitionRef.current = withMuteTransition; }, [withMuteTransition]);
 
+  // Rebuild both HIGH and LOW queues from the current pool and played-set.
+  // Called after any pool change or played-set reset so state transitions are instant.
+  const recomputeQueues = useCallback(() => {
+    const high = buildQueue("warmup",  trackPoolRef.current, playedIdsRef.current);
+    const low  = buildQueue("resting", trackPoolRef.current, playedIdsRef.current);
+    precomputedHighRef.current = high;
+    precomputedLowRef.current  = low;
+    console.log(`[Precompute] HIGH: ${high.length}, LOW: ${low.length} URIs ready`);
+  }, []);
+
+  const recomputeQueuesRef = useRef(recomputeQueues);
+  useEffect(() => { recomputeQueuesRef.current = recomputeQueues; }, [recomputeQueues]);
+
   // Play the correct BPM bucket for a given state by sending a full uris array to Spotify.
   // No context switching — we own the queue entirely.
   const playForState = useCallback(async (state: WorkoutState) => {
@@ -306,9 +322,16 @@ function WorkoutInner() {
     }
     if (!deviceIdRef.current) { console.log("[Queue] No device available"); return; }
 
-    const queue = buildQueue(state, trackPoolRef.current, playedIdsRef.current);
+    const wantHigh = state === "warmup" || state === "exercising";
+    // Use the pre-identified queue if available; fall back to building on the spot.
+    const precomputed = wantHigh ? precomputedHighRef.current : precomputedLowRef.current;
+    const queue = precomputed.length > 0
+      ? precomputed
+      : buildQueue(state, trackPoolRef.current, playedIdsRef.current);
+
     if (queue.length === 0) {
-      console.log(`[Queue] No tracks for state: ${state} — pool may still be loading`);
+      const bucket = wantHigh ? "HIGH" : "LOW";
+      console.log(`[Queue] No ${bucket} BPM tracks in pool for state: ${state}`);
       return;
     }
 
@@ -320,7 +343,7 @@ function WorkoutInner() {
       const t = trackPoolRef.current.find((x) => x.id === id);
       return { "#": i + 1, name: t?.name ?? "?", artists: t?.artists?.join(", ") ?? "?", bpm: t?.bpm ?? "?", playlist: t?.playlistId ?? "?" };
     });
-    console.log(`[Queue] ${state} (${queue.length} tracks):`, queueDetails);
+    console.log(`[Queue] ${state} (${queue.length} tracks, ${precomputed.length > 0 ? "precomputed" : "built now"}):`, queueDetails);
 
     await withMuteTransition(async () => {
       lastCommandRef.current = Date.now();
@@ -333,7 +356,10 @@ function WorkoutInner() {
         body: JSON.stringify({ uris: queue }),
       });
     });
-  }, [session, spotifyFetch, withMuteTransition]);
+
+    // Rebuild queues for the next state change now that this one has consumed the precomputed list
+    recomputeQueuesRef.current();
+  }, [session, spotifyFetch, withMuteTransition, recomputeQueues]);
 
   const playForStateRef = useRef(playForState);
   useEffect(() => { playForStateRef.current = playForState; }, [playForState]);
@@ -448,6 +474,7 @@ function WorkoutInner() {
           if (added.length > 0) {
             trackPoolRef.current = [...trackPoolRef.current, ...added];
             console.log(`[Queue] Pool expanded +${added.length} tracks (total: ${trackPoolRef.current.length})`);
+            recomputeQueuesRef.current();
           }
         });
       }
@@ -528,6 +555,7 @@ function WorkoutInner() {
       const high = pool.filter(t => t.bpm != null && t.bpm >= HIGH_BPM_CUTOFF);
       const low  = pool.filter(t => t.bpm != null && t.bpm < HIGH_BPM_CUTOFF);
       console.log(`[⏱ preload] ${ts()} — pool ready: HIGH: ${high.length}, LOW: ${low.length}`);
+      recomputeQueuesRef.current();
       console.log(`[⏱ preload] ${ts()} — triggering immediate correction check`);
       fetchCurrentTrackRef.current();
     });
@@ -583,6 +611,7 @@ function WorkoutInner() {
     }
     setNoQueue(false);
     playedIdsRef.current = new Set();
+    recomputeQueues(); // rebuild precomputed queues with fresh played set
 
     // Synchronous BPM check — no async gap, no race with the correction polling loop.
     // currentTrackRef is either the last polled track or the optimistically-set switched track.
