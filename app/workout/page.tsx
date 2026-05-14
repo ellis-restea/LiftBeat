@@ -150,6 +150,9 @@ function WorkoutInner() {
   const progressBarRef = useRef<HTMLDivElement>(null);
   const isDraggingRef = useRef(false);
   const prevTrackIdRef = useRef<string | null>(null);
+  // App-side track history for the "previous" button — Spotify's native /previous
+  // 403s when the app uses a custom uris queue (no playlist context).
+  const trackHistoryRef = useRef<string[]>([]);
   const rateLimitUntilRef = useRef<number>(0);
   const workoutStateRef = useRef<WorkoutState>("idle");
   const fetchCurrentTrackRef = useRef<() => Promise<void>>(async () => {});
@@ -545,6 +548,11 @@ function WorkoutInner() {
     const newId = data?.item?.id;
 
     if (newId && newId !== prevTrackIdRef.current) {
+      // Push outgoing track to history so the "previous" button can go back to it
+      if (prevTrackIdRef.current) {
+        trackHistoryRef.current.push(`spotify:track:${prevTrackIdRef.current}`);
+        if (trackHistoryRef.current.length > 20) trackHistoryRef.current.shift();
+      }
       // Mark previous track as played
       if (prevTrackIdRef.current) playedIdsRef.current.add(prevTrackIdRef.current);
       prevTrackIdRef.current = newId;
@@ -672,6 +680,21 @@ function WorkoutInner() {
     const id = setInterval(() => fetchCurrentTrackRef.current(), 5000);
     return () => clearInterval(id);
   }, [session?.accessToken, workoutState]);
+
+  // Advance song position locally every second while playing so the scrub bar moves
+  // smoothly between 5s Spotify polls. Pauses during drag or mute transitions.
+  useEffect(() => {
+    if (!isPlaying) return;
+    const id = setInterval(() => {
+      if (isDraggingRef.current || isTransitioningRef.current) return;
+      setSongPosition(prev => {
+        const next = Math.min(prev + 1000, songDuration || prev);
+        setSongProgress(songDuration > 0 ? Math.round((next / songDuration) * 100) : 0);
+        return next;
+      });
+    }, 1000);
+    return () => clearInterval(id);
+  }, [isPlaying, songDuration]);
 
   // Rest timer — counts down, then switches to exercising and queues HIGH BPM tracks.
   useEffect(() => {
@@ -883,6 +906,27 @@ function WorkoutInner() {
 
   const prevTrack = async () => {
     if (!session?.accessToken) return;
+    // Spotify's /me/player/previous 403s when the app uses a custom uris queue
+    // (no playlist context). Use app-side history instead.
+    const history = trackHistoryRef.current;
+    if (history.length === 0) return;
+
+    // Lazily resolve device if needed
+    if (!deviceIdRef.current) {
+      try {
+        const dr = await spotifyFetch("https://api.spotify.com/v1/me/player/devices", {
+          headers: { Authorization: `Bearer ${session.accessToken}` },
+        });
+        if (dr.ok) {
+          const { devices } = await dr.json();
+          const d = devices?.find((d: any) => d.is_active) ?? devices?.[0];
+          if (d) deviceIdRef.current = d.id;
+        }
+      } catch { /* non-fatal */ }
+    }
+    if (!deviceIdRef.current) return;
+
+    const prevUri = history.pop()!;
     const vol = originalVolumeRef.current;
     setIsTransitioning(true);
     isTransitioningRef.current = true;
@@ -894,9 +938,10 @@ function WorkoutInner() {
           method: "PUT",
           headers: { Authorization: `Bearer ${session.accessToken}` },
         }),
-        spotifyFetch("https://api.spotify.com/v1/me/player/previous", {
-          method: "POST",
-          headers: { Authorization: `Bearer ${session.accessToken}` },
+        spotifyFetch(`https://api.spotify.com/v1/me/player/play?device_id=${deviceIdRef.current}`, {
+          method: "PUT",
+          headers: { Authorization: `Bearer ${session.accessToken}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ uris: [prevUri] }),
         }),
       ]);
 
