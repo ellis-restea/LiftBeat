@@ -38,6 +38,10 @@ function formatMs(ms: number) {
 
 const HIGH_BPM_CUTOFF = 120;
 
+// Diagnostic timing — logs show ms elapsed since the module was first evaluated.
+const _pageLoad = Date.now();
+const ts = () => `+${Date.now() - _pageLoad}ms`;
+
 async function fetchQueueAndEnrich(): Promise<TrackBpm[]> {
   try {
     const qRes = await fetch("/api/queue-tracks");
@@ -341,6 +345,8 @@ function WorkoutInner() {
     if (Date.now() - lastCommandRef.current < 1500) return;
     if (isDraggingRef.current) return;
 
+    console.log(`[⏱ fetchCurrentTrack] ${ts()} — state: ${workoutStateRef.current}, pool: ${trackPoolRef.current.length} tracks, corrected: ${correctionAppliedRef.current}`);
+
     const res = await spotifyFetch("https://api.spotify.com/v1/me/player/currently-playing", {
       headers: { Authorization: `Bearer ${session.accessToken}` },
     });
@@ -362,10 +368,12 @@ function WorkoutInner() {
       data?.is_playing &&
       data?.item?.id
     ) {
+      console.log(`[⏱ playback detected] ${ts()} — track: "${data.item.name}", pool ready: ${trackPoolRef.current.length > 0}`);
       const pool = trackPoolRef.current;
       if (pool.length > 0) {
         const inPool = pool.find(t => t.id === data.item.id);
         const isHighBpm = inPool?.bpm != null && inPool.bpm >= HIGH_BPM_CUTOFF;
+        console.log(`[⏱ correction check] ${ts()} — bpm: ${inPool?.bpm ?? "unknown"}, isHigh: ${isHighBpm}`);
 
         if (isHighBpm) {
           correctionAppliedRef.current = true;
@@ -413,6 +421,7 @@ function WorkoutInner() {
         return; // let next poll refresh UI with the corrected track
       }
       // Pool not ready yet — fall through to update UI, retry correction on next poll
+      console.log(`[⏱ correction deferred] ${ts()} — pool not loaded yet, will retry next poll`);
     }
 
     // Freeze all UI and queue logic while a mute transition is in progress
@@ -499,7 +508,10 @@ function WorkoutInner() {
 
   // Single fetch on page load to show whatever is currently playing in Spotify.
   useEffect(() => {
-    if (session?.accessToken) fetchCurrentTrack();
+    if (session?.accessToken) {
+      console.log(`[⏱ initial fetch] ${ts()} — page-load fetchCurrentTrack`);
+      fetchCurrentTrack();
+    }
   }, [fetchCurrentTrack]);
 
   // Preload queue + BPM on page load so Start Workout is near-instant.
@@ -508,14 +520,15 @@ function WorkoutInner() {
   useEffect(() => {
     if (!session?.accessToken || preloadedRef.current) return;
     preloadedRef.current = true;
+    console.log(`[⏱ preload] ${ts()} — starting fetchQueueAndEnrich`);
 
     fetchQueueAndEnrich().then((pool) => {
-      if (pool.length === 0) return;
+      if (pool.length === 0) { console.log(`[⏱ preload] ${ts()} — 0 tracks returned, aborting`); return; }
       trackPoolRef.current = pool;
       const high = pool.filter(t => t.bpm != null && t.bpm >= HIGH_BPM_CUTOFF);
       const low  = pool.filter(t => t.bpm != null && t.bpm < HIGH_BPM_CUTOFF);
-      console.log(`[Preload] Ready — HIGH: ${high.length}, LOW: ${low.length} tracks`);
-      // Immediately check if correction is needed rather than waiting for next poll
+      console.log(`[⏱ preload] ${ts()} — pool ready: HIGH: ${high.length}, LOW: ${low.length}`);
+      console.log(`[⏱ preload] ${ts()} — triggering immediate correction check`);
       fetchCurrentTrackRef.current();
     });
   }, [session?.accessToken]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -523,6 +536,7 @@ function WorkoutInner() {
   // Poll every 5s to detect track changes, refill queue, and track Spotify playing state.
   useEffect(() => {
     if (!session?.accessToken || workoutState === "done") return;
+    console.log(`[⏱ poll] ${ts()} — 5s interval started`);
     const id = setInterval(() => fetchCurrentTrackRef.current(), 5000);
     return () => clearInterval(id);
   }, [session?.accessToken, workoutState]);
@@ -574,6 +588,7 @@ function WorkoutInner() {
     // currentTrackRef is either the last polled track or the optimistically-set switched track.
     const currentId = currentTrackRef.current?.id;
     const inPool = currentId ? pool.find(t => t.id === currentId) : undefined;
+    console.log(`[⏱ handleStart] ${ts()} — currentTrack: "${currentTrackRef.current?.name ?? "none"}", bpm: ${inPool?.bpm ?? "unknown"}, corrected: ${correctionAppliedRef.current}`);
     if (currentId && inPool?.bpm != null && inPool.bpm >= HIGH_BPM_CUTOFF) {
       console.log(`[Start] Playing HIGH BPM (${inPool.bpm}) — starting timer only`);
       setWorkoutState("warmup");
