@@ -81,19 +81,54 @@ Dashboard has a small pencil/edit icon that takes user back to playlist-select t
 Workout screen loads playlists from Supabase, not from URL params
 No payment screen for now — launch free to build user base, add subscription later once traction is gained
 
-App Logic — Playback System (current: Option 2 custom queue):
+App Logic — Playback System (current: custom uris queue, queue-snapshot pool):
 
-On workout start: pull all tracks from all selected playlists (client-side Spotify fetch),
-  POST to /api/playlist-bpm for BPM lookup, build trackPool (flat TrackBpm[] with playlistId + bpm).
-buildQueue(state, pool, excludeIds, count=10): filters by BPM bucket (HIGH ≥120 for warmup/exercise,
-  LOW <120 for rest), excludes played tracks, round-robin distributes across playlists, returns URIs.
-playForState(state): calls buildQueue + PUT /me/player/play with uris array — never uses context_uri.
-  State changes (Done with Set, rest timer end) call playForState directly with 500ms delay.
-Queue refill: fetchCurrentTrack detects when <5 tracks remain, calls PUT /play with offset+position_ms
-  to extend queue seamlessly without interrupting current song.
-playedIdsRef: Set of track IDs already played this workout — passed to buildQueue as excludeIds.
-deviceIdRef: cached on Start Workout, lazily resolved in playForState if null.
-loadedPlaylistIdsRef: sorted playlist ID string — prevents redundant preloads on same selection.
+Pool source: /api/queue-tracks (GET /me/player/queue snapshot) — playlist-tracks endpoint is blocked
+  in Spotify dev mode (403). /api/playlist-tracks returns 410. Pool is built from whatever tracks
+  are in the user's Spotify queue at page load time.
+
+Preload (on page load, before Start Workout):
+  fetchQueueAndEnrich() — fetches /api/queue-tracks → enriches all tracks with BPM via /api/playlist-bpm.
+  Builds trackPool (flat TrackBpm[] with bpm). Runs up to 2 extra refreshes if HIGH or LOW bucket = 0.
+  recomputeQueues() — rebuilds precomputedHighRef and precomputedLowRef (shuffled URI arrays).
+  After preload: runs idle-state BPM correction (see below).
+
+Idle-state auto-correction:
+  The 5s polling loop checks if Spotify is playing a LOW BPM track before the workout starts.
+  If so, silently mutes + switches to the first HIGH BPM track from the pool (withMuteTransition).
+  correctionAppliedRef prevents repeated correction. handleStart checks currentTrackRef.current
+  synchronously (no await before the check) to avoid race with the correction loop.
+
+playForState(state): 3-layer fallback, called on state transitions and from verifyAndCorrectBpm.
+  1. precomputed queue (precomputedHighRef / precomputedLowRef) — instant, no API call.
+  2. Up to 3× retry: refreshes Spotify queue snapshot, merges new tracks into pool, recomputes.
+  3. Mute-scan fallback: mutes Spotify, calls /me/player/next up to 10×, BPM-checks each
+     incoming track, unmutes (fade-up) on first match. Never leaves audio at 0 on failure.
+  All transitions use withMuteTransition (mute → play → 500ms settle → 5-step fade-up over 400ms).
+  Never uses context_uri — always uris array.
+
+recomputeQueues(): bucket-specific exhaustion. When HIGH bucket is all played, clears only HIGH IDs
+  from playedIdsRef and resets that bucket. LOW bucket is independent. Called after every pool change
+  and after every playForState call.
+
+Queue refill: fetchCurrentTrack detects when <5 tracks remain in currentQueueRef relative to
+  currently playing track — PUT /play with uris + offset + position_ms to extend queue seamlessly.
+
+verifyAndCorrectBpm(vol): called after skip/prev settle (500ms). Fetches currently-playing,
+  looks up BPM from pool. If wrong bucket for current state, calls playForState(ws) (which mutes +
+  corrects + fades up). Returns true if correction made (caller skips its own fade-up).
+fadeUp(vol): extracted helper — 5-step volume restore over 400ms (80ms between steps).
+
+trackHistoryRef: app-side track history stack (up to 20 URIs). Populated when poll detects track
+  change (pushes outgoing track URI). prevTrack() pops from stack and PUT /play with that URI.
+  Spotify's native /me/player/previous 403s when app uses custom uris queue — history replaces it.
+
+Scrub bar: 5s poll updates songPosition/songProgress from Spotify. A separate 1s setInterval
+  advances songPosition locally by 1000ms when isPlaying=true. Pauses during drag/transition.
+  Poll overwrites the local estimate every 5s so drift is bounded.
+
+playedIdsRef: Set of track IDs played this workout. Tracks added when poll detects track change.
+deviceIdRef: lazily resolved — cached on Start Workout, also lazily fetched in playForState/prevTrack.
 BPM cutoff: 120. ≥120 = HIGH (exercising/warmup), <120 = LOW (resting).
 Workout states: idle → warmup → exercising → resting → done
 Glow overlays: amber (warmup), red (exercising), blue (resting), emerald (done)
@@ -101,6 +136,9 @@ Rest timer counts down, auto-switches to exercising + calls playForState("exerci
 noDevice banner only shown in idle state — 204 from currently-playing during active workout is ignored.
 Spotify scopes: user-read-private user-read-playback-state user-modify-playback-state playlist-read-private playlist-read-collaborative streaming
 show_dialog: true on Spotify OAuth to always force consent screen
+
+Diagnostic timing logs: [⏱ ...] console.logs still present in workout/page.tsx — can be removed
+  once timing issues are confirmed resolved.
 
 BPM Source:
 Primary: Songstats Enterprise API — GET /enterprise/v1/tracks/info?spotify_track_id={id}
@@ -119,24 +157,18 @@ BPM Prefetch: lib/prefetchBpm.ts — called fire-and-forget after playlist save 
 
 Known Issues / Blockers:
 
-*** ACTIVE BLOCKER: 403 on GET /playlists/{id}/tracks ***
-The client-side Spotify fetch for playlist tracks returns 403 even after sign-out/sign-in.
-Code is correct (playlist-read-private is in auth config scopes on both initial auth and refresh).
-Root cause: unclear — token may not be receiving the scope despite re-auth.
-Pool stays at 0 → buildQueue returns empty → workout falls back to resuming whatever Spotify had playing.
+*** RESOLVED BY WORKAROUND: 403 on GET /playlists/{id}/tracks ***
+Spotify dev mode blocks the playlist tracks endpoint. Worked around by building the track pool
+entirely from the live Spotify queue snapshot (/api/queue-tracks → /me/player/queue).
+/api/playlist-tracks is disabled (returns 410). Pool variance depends on what's in the user's
+Spotify queue at page load. Mitigated with: preload balance check (2 extra refreshes if HIGH or
+LOW = 0), 3-retry logic in playForState, and mute-scan fallback.
+Root cause (playlist 403) still unresolved — will fix properly when app leaves dev mode.
 
-Possible fixes to try next session (in order):
-1. Revoke app access from Spotify account settings (spotify.com/account/apps) then re-authenticate —
-   this forces a completely fresh OAuth grant, not just a NextAuth signout.
-2. Decode the current access token (paste into jwt.io) and check the `scope` claim to confirm
-   whether playlist-read-private is actually present in the issued token.
-3. Move playlist track fetching to server-side (new API route uses session token server-side) —
-   avoids any client-side CORS or scope-delivery issue.
-4. Check if the specific playlist (2j8uGNFE19P4QbX88pr2hD) is private vs. public — try selecting
-   a known public playlist to isolate whether it's a scope issue or a playlist-ownership issue.
-5. Check Spotify Developer Dashboard app settings — confirm the redirect URI and scopes match exactly.
-6. The PUT /me/player/play 403 (second error) will resolve once the first is fixed and the queue
-   is non-empty. It may also indicate user-modify-playback-state is missing from the token.
+Known remaining limitations:
+- Pool size depends on Spotify queue depth at preload time. If user has a short queue, pool is small.
+- BPM coverage gap for regional/niche music (Songstats returns null tempo) — those tracks go to
+  UNKNOWN bucket and are excluded. Tracks with unknown BPM skip BPM verification in verifyAndCorrectBpm.
 
 Upcoming Features (in priority order):
 
