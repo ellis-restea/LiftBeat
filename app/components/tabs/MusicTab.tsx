@@ -8,6 +8,48 @@ import { feedback } from "@/lib/feedback";
 interface Props { onDone: () => void; }
 
 export default function MusicTab({ onDone }: Props) {
+  return (
+    <div className="relative flex flex-col items-center justify-center min-h-[80vh] px-8 text-center overflow-hidden">
+      {/* Glow */}
+      <div
+        className="pointer-events-none absolute inset-0"
+        style={{
+          background: [
+            "radial-gradient(ellipse 60% 40% at 50% 30%, #3b82f622 0%, transparent 70%)",
+            "radial-gradient(ellipse 40% 25% at 50% 30%, #3b82f610 0%, transparent 60%)",
+          ].join(", "),
+        }}
+      />
+
+      <div className="relative flex flex-col items-center gap-5 max-w-xs">
+        {/* Icon */}
+        <div className="card-metallic w-20 h-20 rounded-2xl flex items-center justify-center text-4xl shadow-lg">
+          🎵
+        </div>
+
+        {/* Badge */}
+        <span className="bg-blue-500/15 text-blue-400 text-xs font-bold px-3 py-1 rounded-full uppercase tracking-widest border border-blue-500/25">
+          Coming Soon
+        </span>
+
+        {/* Heading */}
+        <h2 className="text-2xl font-black tracking-wide text-[#f1f5f9]">
+          Playlist Intelligence
+        </h2>
+
+        {/* Subheading */}
+        <p className="text-[#64748b] text-sm leading-relaxed">
+          LiftSync will learn your music over time — automatically mixing your playlists based on your workout state, tempo, and energy level.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+// ─── Original implementation preserved below ────────────────────────────────
+// Kept intact for when Spotify dev mode restrictions are lifted.
+
+function MusicTabFull({ onDone }: Props) {
   const { data: session, status } = useSession();
   const [playlists, setPlaylists] = useState<any[]>([]);
   const [selected, setSelected]   = useState<string[]>([]);
@@ -60,7 +102,6 @@ export default function MusicTab({ onDone }: Props) {
       .from("user_playlists")
       .upsert({ user_id: session.user.name, playlist_ids: selected }, { onConflict: "user_id" });
 
-    // Kick off BPM prefetch in background — don't await so the save confirmation shows immediately
     prefetchPlaylistsBpm(selected);
 
     setSaving(false);

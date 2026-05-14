@@ -40,7 +40,7 @@ export default function Onboarding() {
   };
 
   const handleSpotify = () => {
-    signIn("spotify", { callbackUrl: "/playlist-select" });
+    signIn("spotify", { callbackUrl: "/dashboard" });
   };
 
   return (
@@ -48,7 +48,7 @@ export default function Onboarding() {
       {/* Skip */}
       <div className="flex justify-end p-6">
         <button
-          onClick={() => signIn("spotify", { callbackUrl: "/playlist-select" })}
+          onClick={() => signIn("spotify", { callbackUrl: "/dashboard" })}
           className="text-[#64748b] hover:text-white text-sm transition"
         >
           Skip
