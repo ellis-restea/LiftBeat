@@ -25,6 +25,7 @@ function WorkoutSetupInner() {
 
   const editId = searchParams.get("workout_id"); // present when editing an existing workout
   const isEditing = !!editId;
+  const isOnboarding = searchParams.get("from") === "onboarding";
 
   const [workoutName, setWorkoutName] = useState("");
   const [exercises, setExercises] = useState<Exercise[]>([
@@ -33,6 +34,8 @@ function WorkoutSetupInner() {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [loadingEdit, setLoadingEdit] = useState(isEditing);
+  const [isDirty, setIsDirty] = useState(false);
+  const [showUnsavedDialog, setShowUnsavedDialog] = useState(false);
 
   // Load existing workout data when editing
   useEffect(() => {
@@ -57,13 +60,23 @@ function WorkoutSetupInner() {
     });
   }, [editId]);
 
+  const handleBack = () => {
+    if (isDirty) {
+      setShowUnsavedDialog(true);
+    } else {
+      router.back();
+    }
+  };
+
   const addExercise = () => {
     feedback("light");
+    setIsDirty(true);
     setExercises([...exercises, { name: "", sets: 3, reps: 12, rest_seconds: 120, superset_with: null }]);
   };
 
   const updateExercise = (index: number, field: keyof Exercise, value: any) => {
     feedback("light");
+    setIsDirty(true);
     const updated = [...exercises];
     updated[index] = { ...updated[index], [field]: value };
 
@@ -79,6 +92,7 @@ function WorkoutSetupInner() {
 
   const toggleSuperset = (index: number) => {
     feedback("light");
+    setIsDirty(true);
     const updated = [...exercises];
     const current = updated[index];
     const partnerIdx = index - 1;
@@ -92,6 +106,7 @@ function WorkoutSetupInner() {
   };
 
   const removeExercise = (index: number) => {
+    setIsDirty(true);
     setExercises(exercises.filter((_, i) => i !== index));
   };
 
@@ -162,8 +177,51 @@ function WorkoutSetupInner() {
 
   return (
     <div className="min-h-screen bg-[#0a0a0f] text-[#f1f5f9] p-8">
+      {showUnsavedDialog && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-6"
+          style={{ backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', background: 'rgba(0,0,0,0.6)' }}
+        >
+          <div
+            className="card-metallic rounded-2xl p-6 w-full max-w-sm flex flex-col gap-4"
+            style={{ animation: 'liftfade 200ms ease forwards' }}
+          >
+            <div>
+              <h2 className="text-xl font-bold text-white">Unsaved changes</h2>
+              <p className="text-[#64748b] text-sm mt-1">Your changes haven't been saved yet.</p>
+            </div>
+            <div className="flex flex-col gap-3">
+              <button
+                onClick={() => setShowUnsavedDialog(false)}
+                className="w-full bg-blue-500 hover:bg-blue-400 text-white font-bold py-4 rounded-xl text-base active:scale-95 transition-transform"
+              >
+                Keep Editing
+              </button>
+              <button
+                onClick={() => router.back()}
+                className="w-full text-red-400 hover:text-red-300 font-semibold py-3 rounded-xl text-base active:scale-95 transition-colors border border-red-500/30 hover:border-red-500/50"
+              >
+                Discard Changes
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       <div className="max-w-md mx-auto">
-        <h1 className="text-3xl font-bold tracking-wide mb-2">LiftSync</h1>
+        <div className="flex items-center mb-2">
+          {!isOnboarding && (
+            <button
+              onClick={handleBack}
+              className="mr-3 -ml-1 text-[#64748b] hover:text-white active:scale-95 transition-all touch-manipulation"
+              aria-label="Back"
+            >
+              <svg viewBox="0 0 24 24" fill="currentColor" className="w-6 h-6">
+                <path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z" />
+              </svg>
+            </button>
+          )}
+          <h1 className="text-3xl font-bold tracking-wide">LiftSync</h1>
+        </div>
         <p className="text-[#64748b] mb-8">{isEditing ? "Edit workout" : "Build your workout"}</p>
 
         <div className="grid gap-6">
@@ -172,7 +230,7 @@ function WorkoutSetupInner() {
             <input
               type="text"
               value={workoutName}
-              onChange={(e) => setWorkoutName(e.target.value)}
+              onChange={(e) => { setWorkoutName(e.target.value); setIsDirty(true); }}
               placeholder="e.g. Upper Body A"
               className="w-full bg-[#0a0a0f] text-[#f1f5f9] rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500 border border-white/10"
             />

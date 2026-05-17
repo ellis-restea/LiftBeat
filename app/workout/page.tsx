@@ -144,6 +144,7 @@ function WorkoutInner() {
   const [noQueue, setNoQueue] = useState(false);
   const [isTransitioning, setIsTransitioning] = useState(false);
   const [spotifyPlaying, setSpotifyPlaying] = useState<boolean | null>(null);
+  const [showExitDialog, setShowExitDialog] = useState(false);
 
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const lastCommandRef = useRef<number>(0);
@@ -991,6 +992,18 @@ function WorkoutInner() {
     }
   };
 
+  const handleEndWorkout = async () => {
+    if (session?.accessToken) {
+      try {
+        await spotifyFetch("https://api.spotify.com/v1/me/player/pause", {
+          method: "PUT",
+          headers: { Authorization: `Bearer ${session.accessToken}` },
+        });
+      } catch { /* non-fatal */ }
+    }
+    router.push("/dashboard");
+  };
+
   const getProgressFromX = (clientX: number): number => {
     if (!progressBarRef.current) return 0;
     const rect = progressBarRef.current.getBoundingClientRect();
@@ -1099,10 +1112,13 @@ function WorkoutInner() {
     done: "Done",
   };
 
+  const bannerVisible = noDevice || noQueue || premiumRequired;
+
   return (
     <>
       <div className="fixed inset-0 bg-[#0a0a0f]" style={{ zIndex: -1 }} />
       <div className="fixed inset-0 pointer-events-none" style={{ zIndex: 0 }}>
+
         {(Object.entries(glowColors) as [WorkoutState, string][]).map(([state, color]) => (
           <div key={state} style={{
             position: 'absolute', inset: 0,
@@ -1116,6 +1132,50 @@ function WorkoutInner() {
           }} />
         ))}
       </div>
+
+      {/* Back button — fixed top-left, above content but below any dialog */}
+      <button
+        onClick={() => setShowExitDialog(true)}
+        className={`fixed left-4 z-20 text-gray-400 hover:text-white active:scale-95 transition-all touch-manipulation ${bannerVisible ? "top-14" : "top-4"}`}
+        aria-label="Back"
+      >
+        <svg viewBox="0 0 24 24" fill="currentColor" className="w-7 h-7">
+          <path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z" />
+        </svg>
+      </button>
+
+      {/* Exit confirmation dialog */}
+      {showExitDialog && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center p-6"
+          style={{ backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', background: 'rgba(0,0,0,0.65)' }}
+        >
+          <div
+            className="card-metallic rounded-2xl p-6 w-full max-w-sm flex flex-col gap-4"
+            style={{ animation: 'liftfade 200ms ease forwards' }}
+          >
+            <div>
+              <h2 className="text-xl font-bold text-white">End workout?</h2>
+              <p className="text-gray-400 text-sm mt-1">Your progress will be lost.</p>
+            </div>
+            <div className="flex flex-col gap-3">
+              <button
+                onClick={() => setShowExitDialog(false)}
+                className="w-full bg-blue-500 hover:bg-blue-400 text-white font-bold py-4 rounded-xl text-base active:scale-95 transition-transform"
+              >
+                Keep Going
+              </button>
+              <button
+                onClick={handleEndWorkout}
+                className="w-full text-red-400 hover:text-red-300 font-semibold py-3 rounded-xl text-base active:scale-95 transition-colors border border-red-500/30 hover:border-red-500/50"
+              >
+                End Workout
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="relative min-h-screen text-white flex flex-col items-center justify-between p-8" style={{ zIndex: 1 }}>
       {(noDevice || noQueue || premiumRequired) && (
         <div
