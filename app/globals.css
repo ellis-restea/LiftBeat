@@ -95,34 +95,6 @@
   border-radius: 6px;
 }
 
-.btn-spotify {
-  position: relative;
-  isolation: isolate;
-  box-shadow: 0 0 18px rgba(29,185,84,0.35), 0 0 36px rgba(29,185,84,0.12);
-}
-
-.btn-spotify::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  padding: 1.5px;
-  background: conic-gradient(
-    from var(--swish-angle),
-    transparent 0%,
-    rgba(255,255,255,0.85) 22%,
-    rgba(255,255,255,0.45) 32%,
-    transparent 55%
-  );
-  -webkit-mask:
-    linear-gradient(#fff 0 0) content-box,
-    linear-gradient(#fff 0 0);
-  -webkit-mask-composite: xor;
-  mask-composite: exclude;
-  animation: swish 2.5s linear infinite;
-  pointer-events: none;
-}
-
 @layer utilities {
   .card-metallic {
     background: linear-gradient(135deg, #1a1d2e 0%, #0f1117 50%, #1a1d2e 100%);
@@ -146,6 +118,34 @@
       transparent 0%,
       #3b82f6 22%,
       #93c5fd 32%,
+      transparent 55%
+    );
+    -webkit-mask:
+      linear-gradient(#fff 0 0) content-box,
+      linear-gradient(#fff 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+    animation: swish 2.5s linear infinite;
+    pointer-events: none;
+  }
+
+  .btn-spotify {
+    position: relative;
+    isolation: isolate;
+    box-shadow: 0 0 18px rgba(29,185,84,0.35), 0 0 36px rgba(29,185,84,0.12);
+  }
+
+  .btn-spotify::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    padding: 1.5px;
+    background: conic-gradient(
+      from var(--swish-angle),
+      transparent 0%,
+      rgba(255,255,255,0.85) 22%,
+      rgba(255,255,255,0.45) 32%,
       transparent 55%
     );
     -webkit-mask:
