@@ -1112,7 +1112,7 @@ function WorkoutInner() {
     done: "Done",
   };
 
-  const bannerVisible = noDevice || noQueue || premiumRequired;
+  const bannerVisible = premiumRequired;
 
   return (
     <>
@@ -1177,24 +1177,14 @@ function WorkoutInner() {
       )}
 
       <div className="relative min-h-screen text-white flex flex-col items-center justify-between p-8" style={{ zIndex: 1 }}>
-      {(noDevice || noQueue || premiumRequired) && (
-        <div
-          className={`fixed top-0 left-0 right-0 z-50 backdrop-blur-sm text-sm text-center py-2.5 px-4 ${
-            premiumRequired
-              ? "bg-red-900/90 text-red-200"
-              : "bg-amber-900/90 text-amber-200"
-          }`}
-        >
-          {premiumRequired
-            ? "LiftSync requires Spotify Premium"
-            : noQueue
-            ? "Start playing a playlist in Spotify first, then tap Start Workout"
-            : "Open Spotify on your device, then tap Start Workout"}
+      {premiumRequired && (
+        <div className="fixed top-0 left-0 right-0 z-50 backdrop-blur-sm text-sm text-center py-2.5 px-4 bg-red-900/90 text-red-200">
+          LiftSync requires Spotify Premium
         </div>
       )}
 
       {/* Top */}
-      <div className={`text-center w-full ${(noDevice || noQueue || premiumRequired) ? "mt-12" : "mt-4"}`}>
+      <div className={`text-center w-full ${premiumRequired ? "mt-12" : "mt-4"}`}>
         <p className="text-gray-400 text-xs uppercase tracking-widest mb-2">
           Exercise {currentExerciseIndex + 1} of {exercises.length}
         </p>
@@ -1310,27 +1300,48 @@ function WorkoutInner() {
 
       {/* Bottom */}
       <div className="w-full max-w-sm mb-4 flex flex-col gap-4">
-        {workoutState === "idle" && spotifyPlaying === false && (
-          <div className="card-metallic rounded-2xl p-4 text-center flex flex-col gap-3">
-            <p className="text-amber-400 text-sm font-medium">
-              Open Spotify and play a playlist to begin
-            </p>
-            <a
-              href="spotify://"
-              className="inline-block bg-[#1DB954] text-white text-sm font-bold px-5 py-2.5 rounded-xl active:scale-95 transition-transform"
-            >
-              Open Spotify
-            </a>
-          </div>
-        )}
         {workoutState === "idle" && (
-          <button
-            onClick={handleStart}
-            disabled={spotifyPlaying !== true || isTransitioning}
-            className="w-full bg-blue-500 hover:bg-blue-400 disabled:opacity-40 disabled:cursor-not-allowed text-white font-bold py-5 rounded-2xl text-xl touch-manipulation active:scale-95 transition-all btn-animated"
-          >
-            Start Workout 🔥
-          </button>
+          <>
+            <div className="grid w-full">
+              <a
+                href="spotify://"
+                style={{
+                  gridArea: '1/1',
+                  opacity: spotifyPlaying === true ? 0 : 1,
+                  pointerEvents: spotifyPlaying === true ? 'none' : 'auto',
+                  transition: 'opacity 400ms ease',
+                }}
+                className="w-full bg-[#1DB954] text-white font-bold py-5 rounded-2xl text-xl touch-manipulation active:scale-95 flex items-center justify-center gap-3 btn-spotify"
+              >
+                <svg viewBox="0 0 24 24" fill="currentColor" className="w-6 h-6 shrink-0">
+                  <path d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z"/>
+                </svg>
+                Open Spotify
+              </a>
+              <button
+                onClick={handleStart}
+                disabled={isTransitioning}
+                style={{
+                  gridArea: '1/1',
+                  opacity: spotifyPlaying === true ? 1 : 0,
+                  pointerEvents: spotifyPlaying === true ? 'auto' : 'none',
+                  transition: 'opacity 400ms ease',
+                }}
+                className="w-full bg-blue-500 hover:bg-blue-400 disabled:opacity-40 text-white font-bold py-5 rounded-2xl text-xl touch-manipulation active:scale-95 btn-animated"
+              >
+                Start Workout 🔥
+              </button>
+            </div>
+            <p
+              style={{
+                opacity: spotifyPlaying === true ? 0 : 1,
+                transition: 'opacity 400ms ease',
+              }}
+              className="text-center text-gray-500 text-sm pointer-events-none"
+            >
+              Play any playlist in Spotify, then come back
+            </p>
+          </>
         )}
         {workoutState === "warmup" && (
           <button

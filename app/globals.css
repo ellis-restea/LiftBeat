@@ -95,6 +95,15 @@
   border-radius: 6px;
 }
 
+@keyframes spotifyGlow {
+  0%, 100% { box-shadow: 0 0 16px rgba(29,185,84,0.4), 0 0 32px rgba(29,185,84,0.15); }
+  50%       { box-shadow: 0 0 28px rgba(29,185,84,0.7), 0 0 56px rgba(29,185,84,0.3); }
+}
+
+.btn-spotify {
+  animation: spotifyGlow 2.5s ease-in-out infinite;
+}
+
 @layer utilities {
   .card-metallic {
     background: linear-gradient(135deg, #1a1d2e 0%, #0f1117 50%, #1a1d2e 100%);
