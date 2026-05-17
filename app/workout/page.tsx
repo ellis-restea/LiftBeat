@@ -512,11 +512,24 @@ function WorkoutInner() {
           }
 
           if (deviceIdRef.current) {
-            const queue = buildQueue("warmup", pool, playedIdsRef.current);
+            // Prefer precomputed queue — avoids rebuild latency
+            const queue = precomputedHighRef.current.length > 0
+              ? precomputedHighRef.current
+              : buildQueue("warmup", pool, playedIdsRef.current);
+
             if (queue.length > 0) {
               currentQueueRef.current = queue;
-              console.log("[Auto-switch] Switching to HIGH BPM before workout starts");
-              await withMuteTransitionRef.current(async () => {
+              const vol = originalVolumeRef.current;
+              console.log("[Auto-switch] LOW BPM detected — muting immediately and switching");
+
+              setIsTransitioning(true);
+              isTransitioningRef.current = true;
+              try {
+                // Mute first, no volume-fetch round-trip (saves ~200ms vs withMuteTransition)
+                await spotifyFetch(`https://api.spotify.com/v1/me/player/volume?volume_percent=0`, {
+                  method: "PUT",
+                  headers: { Authorization: `Bearer ${session.accessToken}` },
+                });
                 lastCommandRef.current = Date.now();
                 await spotifyFetch(
                   `https://api.spotify.com/v1/me/player/play?device_id=${deviceIdRef.current}`,
@@ -526,7 +539,19 @@ function WorkoutInner() {
                     body: JSON.stringify({ uris: queue }),
                   }
                 );
-              });
+                await new Promise(r => setTimeout(r, 500));
+                for (let i = 1; i <= 5; i++) {
+                  await spotifyFetch(
+                    `https://api.spotify.com/v1/me/player/volume?volume_percent=${Math.round((vol * i) / 5)}`,
+                    { method: "PUT", headers: { Authorization: `Bearer ${session.accessToken}` } },
+                  );
+                  if (i < 5) await new Promise(r => setTimeout(r, 80));
+                }
+              } finally {
+                setIsTransitioning(false);
+                isTransitioningRef.current = false;
+              }
+
               // Optimistically update currentTrackRef so handleStart's BPM check
               // sees the switched-to HIGH BPM track, not the old LOW BPM one
               const firstId = queue[0]?.replace("spotify:track:", "");
@@ -673,11 +698,13 @@ function WorkoutInner() {
     })();
   }, [session?.accessToken]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Poll every 5s to detect track changes, refill queue, and track Spotify playing state.
+  // Poll every 1s in idle state (fast BPM detection before workout starts),
+  // 5s once the workout is running (track changes / queue refill).
   useEffect(() => {
     if (!session?.accessToken || workoutState === "done") return;
-    console.log(`[⏱ poll] ${ts()} — 5s interval started`);
-    const id = setInterval(() => fetchCurrentTrackRef.current(), 5000);
+    const interval = workoutState === "idle" ? 1000 : 5000;
+    console.log(`[⏱ poll] ${ts()} — ${interval}ms interval started`);
+    const id = setInterval(() => fetchCurrentTrackRef.current(), interval);
     return () => clearInterval(id);
   }, [session?.accessToken, workoutState]);
 
@@ -832,6 +859,12 @@ function WorkoutInner() {
       method: "PUT",
       headers: { Authorization: `Bearer ${session.accessToken}` },
     });
+    // If resuming in idle state, bypass the 1s poll delay and check BPM right away
+    if (next && workoutStateRef.current === "idle" && !correctionAppliedRef.current) {
+      await new Promise(r => setTimeout(r, 800));
+      lastCommandRef.current = 0; // clear guard so fetchCurrentTrack doesn't skip
+      fetchCurrentTrackRef.current();
+    }
   };
 
   // After a skip/prev, check the incoming track's BPM against the current workout state.
