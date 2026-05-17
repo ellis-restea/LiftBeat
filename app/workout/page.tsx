@@ -145,6 +145,7 @@ function WorkoutInner() {
   const [isTransitioning, setIsTransitioning] = useState(false);
   const [spotifyPlaying, setSpotifyPlaying] = useState<boolean | null>(null);
   const [showExitDialog, setShowExitDialog] = useState(false);
+  const [restingDots, setRestingDots] = useState(0);
 
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const lastCommandRef = useRef<number>(0);
@@ -741,6 +742,13 @@ function WorkoutInner() {
     }, 1000);
     return () => clearInterval(timerRef.current!);
   }, [workoutState, currentExercise]);
+
+  // Cycle dots on the Resting button: 0→1→2→3→0 every 500ms
+  useEffect(() => {
+    if (workoutState !== "resting") { setRestingDots(0); return; }
+    const id = setInterval(() => setRestingDots(d => (d + 1) % 4), 500);
+    return () => clearInterval(id);
+  }, [workoutState]);
 
   const handleStart = async () => {
     if (!session?.accessToken) return;
@@ -1351,9 +1359,9 @@ function WorkoutInner() {
         {workoutState === "resting" && (
           <button
             disabled
-            className="w-full bg-gray-700/50 text-gray-500 font-bold py-5 rounded-2xl text-xl cursor-not-allowed"
+            className="w-full bg-gray-800 text-gray-400 font-bold py-5 rounded-2xl text-xl touch-manipulation cursor-not-allowed border border-white/5"
           >
-            Resting...
+            {"Resting" + ".".repeat(restingDots)}
           </button>
         )}
 
