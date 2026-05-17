@@ -1362,12 +1362,6 @@ function WorkoutInner() {
           </div>
         </div>
 
-        <p className="text-center text-gray-600 text-xs">
-          BPM data provided by{" "}
-          <a href="https://songstats.com" target="_blank" rel="noopener noreferrer" className="underline hover:text-gray-400 transition">
-            Songstats
-          </a>
-        </p>
       </div>
     </div>
     </>

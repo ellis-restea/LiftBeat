@@ -54,11 +54,6 @@ export default function Home() {
       <p className="text-center text-[#64748b] text-xs pb-2">
         Powered by Spotify · Built for lifters
       </p>
-      <footer className="text-center py-4">
-        <a href="https://getsongbpm.com" target="_blank" rel="noopener noreferrer" className="text-[#64748b] hover:text-[#94a3b8] text-xs">
-          BPM data provided by GetSongBPM
-        </a>
-      </footer>
     </div>
   );
 }

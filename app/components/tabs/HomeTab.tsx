@@ -162,17 +162,6 @@ export default function HomeTab({ hasPlaylists }: Props) {
           <span className="text-xl">+</span> New Workout
         </button>
 
-        <p className="text-center text-[#64748b] text-xs mt-2">
-          BPM data provided by{" "}
-          <a
-            href="https://getsongbpm.com"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="underline hover:text-[#94a3b8] transition"
-          >
-            GetSongBPM
-          </a>
-        </p>
       </div>
     </div>
   );
