@@ -1215,11 +1215,12 @@ function WorkoutInner() {
           {statusLabels[workoutState]}
         </span>
 
-        {workoutState === "resting" && (
-          <p className={`text-7xl font-bold ${accentColors[workoutState]}`}>
-            {formatTime(timeLeft)}
-          </p>
-        )}
+        <p
+          className={`text-7xl font-bold ${accentColors.resting} transition-opacity duration-300`}
+          style={{ opacity: workoutState === "resting" ? 1 : 0, pointerEvents: "none" }}
+        >
+          {formatTime(timeLeft)}
+        </p>
 
         <div className="relative">
           {currentTrack?.album?.images?.[0] ? (
