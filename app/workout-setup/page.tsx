@@ -208,11 +208,11 @@ function WorkoutSetupInner() {
         </div>
       )}
       <div className="max-w-md mx-auto">
-        <div className="flex items-center mb-2">
+        <div className="flex items-center mb-8">
           {!isOnboarding && (
             <button
               onClick={handleBack}
-              className="mr-3 -ml-1 text-[#64748b] hover:text-white active:scale-95 transition-all touch-manipulation"
+              className="mr-3 -ml-1 self-start mt-1 text-[#64748b] hover:text-white active:scale-95 transition-all touch-manipulation"
               aria-label="Back"
             >
               <svg viewBox="0 0 24 24" fill="currentColor" className="w-6 h-6">
@@ -220,9 +220,11 @@ function WorkoutSetupInner() {
               </svg>
             </button>
           )}
-          <h1 className="text-3xl font-bold tracking-wide">LiftSync</h1>
+          <div>
+            <h1 className="text-3xl font-bold tracking-wide">LiftSync</h1>
+            <p className="text-[#64748b] mt-1">{isEditing ? "Edit workout" : "Build your workout"}</p>
+          </div>
         </div>
-        <p className="text-[#64748b] mb-8">{isEditing ? "Edit workout" : "Build your workout"}</p>
 
         <div className="grid gap-6">
           <div className="card-metallic rounded-xl p-6">
