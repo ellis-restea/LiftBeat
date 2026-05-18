@@ -385,23 +385,25 @@ function WorkoutInner() {
     const data = await res.json();
     setSpotifyPlaying(data?.is_playing ?? false);
 
-    // Idle-state correction: mute immediately, enrich BPM inline, then decide whether to switch.
-    if (
-      workoutStateRef.current === "idle" &&
-      !correctionAppliedRef.current &&
-      data?.is_playing &&
-      data?.item?.id
-    ) {
+    // Idle correction: mute is the very first action on any playback detection — before BPM
+    // check or track identification. Volume only comes back once HIGH BPM is confirmed playing.
+    if (workoutStateRef.current === "idle" && !correctionAppliedRef.current && data?.is_playing) {
       correctionAppliedRef.current = true;
       setIsTransitioning(true);
       isTransitioningRef.current = true;
 
       try {
-        // Mute immediately so the user never hears a wrong-BPM song before the workout starts
+        // Mute FIRST — before any BPM analysis or track identification
         await spotifyFetch(`https://api.spotify.com/v1/me/player/volume?volume_percent=0`, {
           method: "PUT",
           headers: { Authorization: `Bearer ${session!.accessToken!}` },
         });
+
+        if (!data?.item?.id) {
+          // No track info available — restore volume and bail
+          await fadeUpRef.current(originalVolumeRef.current);
+          return;
+        }
 
         // Enrich BPM for the current track if not already cached
         let inPool = trackPoolRef.current.find(t => t.id === data.item.id);
@@ -434,16 +436,16 @@ function WorkoutInner() {
           } catch { /* non-fatal */ }
         }
 
-        const isConfirmedLow = inPool?.bpm != null && inPool.bpm < HIGH_BPM_CUTOFF;
-        console.log(`[Idle correction] "${data.item.name}" — bpm: ${inPool?.bpm ?? "unknown"}, switch: ${isConfirmedLow}`);
+        const isConfirmedHigh = inPool?.bpm != null && inPool.bpm >= HIGH_BPM_CUTOFF;
+        console.log(`[Idle correction] "${data.item.name}" — bpm: ${inPool?.bpm ?? "unknown"}, confirmed HIGH: ${isConfirmedHigh}`);
 
-        if (isConfirmedLow) {
-          // Already muted; withMuteTransition sees vol=0 → keeps originalVolumeRef → restores correctly
+        if (isConfirmedHigh) {
+          // Confirmed HIGH BPM — fade up, done
+          await fadeUpRef.current(originalVolumeRef.current);
+        } else {
+          // LOW or unknown — nudge to a HIGH BPM track; withMuteTransition sees vol=0, restores correctly
           const switched = await nudgeBpmForStateRef.current("warmup");
           if (!switched) await fadeUpRef.current(originalVolumeRef.current);
-        } else {
-          // HIGH or unknown — just restore volume
-          await fadeUpRef.current(originalVolumeRef.current);
         }
       } finally {
         setIsTransitioning(false);
