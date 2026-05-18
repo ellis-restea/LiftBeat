@@ -214,8 +214,10 @@ function WorkoutInner() {
 
   useEffect(() => { withMuteTransitionRef.current = withMuteTransition; }, [withMuteTransition]);
 
-  // Scan the upcoming Spotify queue for a BPM-matching track, push it to the front via
-  // POST /queue, then skip to it. Spotify manages the playlist — the app only nudges BPM.
+  // At a state transition: find a BPM-matching track in the upcoming Spotify queue and get
+  // it playing. If next track already matches, skip once. Otherwise POST the candidate once
+  // to guarantee it appears, then skip forward (verifying BPM) until it is confirmed playing.
+  // Never pushes lookahead — one POST per transition to avoid queue accumulation.
   const nudgeBpmForState = useCallback(async (state: WorkoutState): Promise<boolean> => {
     if (!session?.accessToken) return false;
     if (state === "idle" || state === "done") return false;
@@ -278,63 +280,82 @@ function WorkoutInner() {
       } catch { /* non-fatal */ }
     }
 
-    // Find candidates in upcoming queue, excluding the currently-playing track
+    // wantHigh is determined by the INCOMING state — not the outgoing one
     const wantHigh = state === "warmup" || state === "exercising";
     const bucket = wantHigh ? "HIGH" : "LOW";
+    const getBpm = (id: string) => trackPoolRef.current.find(p => p.id === id)?.bpm;
+    const matchesBucket = (id: string) => {
+      const bpm = getBpm(id);
+      return bpm != null && (bpm >= HIGH_BPM_CUTOFF) === wantHigh;
+    };
 
-    const candidates = upcomingTracks.filter(t => {
-      if (t.id === currentlyPlayingId) return false;
-      const inPool = trackPoolRef.current.find(p => p.id === t.id);
-      if (!inPool?.bpm) return false;
-      return (inPool.bpm >= HIGH_BPM_CUTOFF) === wantHigh;
-    });
+    // Upcoming tracks, excluding the currently-playing track
+    const upcoming = upcomingTracks.filter(t => t.id !== currentlyPlayingId);
+    console.log(`[Nudge] state=${state} target=${bucket} — ${upcoming.length} upcoming tracks`);
 
-    console.log(`[Nudge] ${state} (${bucket}) — ${candidates.length} candidate(s) in ${upcomingTracks.length} upcoming`);
+    // Fast path: next track already has the right BPM — skip to it, no POST needed
+    if (upcoming.length > 0 && matchesBucket(upcoming[0].id)) {
+      console.log(`[Nudge] Next "${upcoming[0].name}" already ${bucket} (${getBpm(upcoming[0].id)} BPM) — skip only, no queue change`);
+      await withMuteTransition(async () => {
+        lastCommandRef.current = Date.now();
+        await spotifyFetch("https://api.spotify.com/v1/me/player/next", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${session!.accessToken!}` },
+        });
+      });
+      playedIdsRef.current.add(upcoming[0].id);
+      return true;
+    }
 
-    if (candidates.length === 0) {
-      console.log(`[Nudge] No ${bucket} match in upcoming queue — keeping current track`);
+    // Find the first candidate with the correct BPM bucket anywhere in the upcoming queue
+    const candidate = upcoming.find(t => matchesBucket(t.id));
+    if (!candidate) {
+      console.log(`[Nudge] No ${bucket} track found in upcoming queue — keeping current`);
       setToastMessage(`No ${wantHigh ? "high" : "low"} BPM track found nearby — keeping current`);
       return false;
     }
 
-    const primary = candidates[0];
-    const lookahead1 = candidates[1] ?? null;
-    const lookahead2 = candidates[2] ?? null;
+    console.log(`[Nudge] Pushing "${candidate.name}" (${getBpm(candidate.id) ?? "?"} BPM) to queue end, then skipping to it`);
 
     await withMuteTransition(async () => {
       lastCommandRef.current = Date.now();
 
+      // POST the candidate once to guarantee it appears — no lookahead to avoid accumulation
       await spotifyFetch(
-        `https://api.spotify.com/v1/me/player/queue?uri=spotify%3Atrack%3A${primary.id}`,
+        `https://api.spotify.com/v1/me/player/queue?uri=spotify%3Atrack%3A${candidate.id}`,
         { method: "POST", headers: { Authorization: `Bearer ${session!.accessToken!}` } }
       );
 
-      if (lookahead1) {
-        await spotifyFetch(
-          `https://api.spotify.com/v1/me/player/queue?uri=spotify%3Atrack%3A${lookahead1.id}`,
-          { method: "POST", headers: { Authorization: `Bearer ${session!.accessToken!}` } }
-        );
-      }
+      // Skip forward until a track with the correct BPM bucket is confirmed playing (up to 5 tries)
+      for (let attempt = 0; attempt < 5; attempt++) {
+        await spotifyFetch("https://api.spotify.com/v1/me/player/next", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${session!.accessToken!}` },
+        });
 
-      if (lookahead2) {
-        await spotifyFetch(
-          `https://api.spotify.com/v1/me/player/queue?uri=spotify%3Atrack%3A${lookahead2.id}`,
-          { method: "POST", headers: { Authorization: `Bearer ${session!.accessToken!}` } }
-        );
-      }
+        await new Promise(r => setTimeout(r, 500));
 
-      await spotifyFetch("https://api.spotify.com/v1/me/player/next", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${session!.accessToken!}` },
-      });
+        const cpRes = await spotifyFetch("https://api.spotify.com/v1/me/player/currently-playing", {
+          headers: { Authorization: `Bearer ${session!.accessToken!}` },
+        });
+        if (!cpRes.ok || cpRes.status === 204) break;
+
+        const cpData = await cpRes.json();
+        const nowId = cpData?.item?.id;
+        if (!nowId) break;
+
+        const nowBpm = getBpm(nowId);
+        const nowMatches = matchesBucket(nowId);
+        console.log(`[Nudge] Skip ${attempt + 1}: "${cpData.item?.name}" (${nowBpm ?? "?"} BPM) — ${nowMatches ? `confirmed ${bucket}` : `wrong BPM, skipping again`}`);
+
+        if (nowMatches) {
+          playedIdsRef.current.add(nowId);
+          break;
+        }
+      }
     });
 
-    playedIdsRef.current.add(primary.id);
-    if (lookahead1) playedIdsRef.current.add(lookahead1.id);
-    if (lookahead2) playedIdsRef.current.add(lookahead2.id);
-
-    const primaryBpm = trackPoolRef.current.find(t => t.id === primary.id)?.bpm;
-    console.log(`[Nudge] Pushed "${primary.name}" (${primaryBpm ?? "?"} BPM) → skipped to it`);
+    playedIdsRef.current.add(candidate.id);
     return true;
   }, [session, spotifyFetch, withMuteTransition]);
 
@@ -534,7 +555,6 @@ function WorkoutInner() {
     deviceIdRef.current = device.id;
 
     playedIdsRef.current = new Set();
-    await nudgeBpmForState("warmup");
     setWorkoutState("warmup");
   };
 
