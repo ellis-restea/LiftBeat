@@ -385,6 +385,11 @@ function WorkoutInner() {
     const data = await res.json();
     setSpotifyPlaying(data?.is_playing ?? false);
 
+    // Log what Spotify returns on every poll before idle correction fires (new-session first-look)
+    if (!correctionAppliedRef.current && data?.item?.id) {
+      console.log(`[First-poll] Spotify currently-playing: "${data.item.name}" uri=spotify:track:${data.item.id} is_playing=${data.is_playing}`);
+    }
+
     // Idle correction: mute is the very first action on any playback detection — before BPM
     // check or track identification. Volume only comes back once HIGH BPM is confirmed playing.
     if (workoutStateRef.current === "idle" && !correctionAppliedRef.current && data?.is_playing) {
@@ -770,6 +775,8 @@ function WorkoutInner() {
     deviceIdRef.current = null;
     lastCommandRef.current = 0;
     rateLimitUntilRef.current = 0;
+
+    console.log("[Session reset] handleEndWorkout called — all session state cleared");
 
     router.push("/dashboard");
   };
