@@ -757,6 +757,20 @@ function WorkoutInner() {
         });
       } catch { /* non-fatal */ }
     }
+
+    // Stop any running rest timer
+    if (timerRef.current) clearInterval(timerRef.current);
+
+    // Reset all session state so the next workout always starts from a clean slate
+    trackPoolRef.current = [];
+    playedIdsRef.current = new Set();
+    trackHistoryRef.current = [];
+    prevTrackIdRef.current = null;
+    correctionAppliedRef.current = false;
+    deviceIdRef.current = null;
+    lastCommandRef.current = 0;
+    rateLimitUntilRef.current = 0;
+
     router.push("/dashboard");
   };
 
