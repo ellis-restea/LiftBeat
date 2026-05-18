@@ -451,6 +451,8 @@ function WorkoutInner() {
       });
     });
 
+    // Mark sent tracks as played immediately so the next recompute builds a non-overlapping queue
+    for (const uri of queue) playedIdsRef.current.add(uri.replace("spotify:track:", ""));
     // Rebuild queues for the next state change
     recomputeQueuesRef.current();
   }, [session, spotifyFetch, withMuteTransition, recomputeQueues]);
@@ -776,19 +778,13 @@ function WorkoutInner() {
     playedIdsRef.current = new Set();
     recomputeQueues(); // rebuild precomputed queues with fresh played set
 
-    // Synchronous BPM check — no async gap, no race with the correction polling loop.
-    // currentTrackRef is either the last polled track or the optimistically-set switched track.
-    const currentId = currentTrackRef.current?.id;
-    const inPool = currentId ? pool.find(t => t.id === currentId) : undefined;
-    console.log(`[⏱ handleStart] ${ts()} — currentTrack: "${currentTrackRef.current?.name ?? "none"}", bpm: ${inPool?.bpm ?? "unknown"}, corrected: ${correctionAppliedRef.current}`);
-    if (currentId && inPool?.bpm != null && inPool.bpm >= HIGH_BPM_CUTOFF) {
-      console.log(`[Start] Playing HIGH BPM (${inPool.bpm}) — starting timer only`);
-      setWorkoutState("warmup");
-      return;
-    }
-
-    // Current track is LOW/unknown BPM or Spotify was paused — switch now
-    const queue = buildQueue("warmup", pool, playedIdsRef.current);
+    console.log(`[⏱ handleStart] ${ts()} — currentTrack: "${currentTrackRef.current?.name ?? "none"}", corrected: ${correctionAppliedRef.current}`);
+    // Always send our shuffled queue so playback is random from workout start.
+    // Even if a HIGH BPM track is already playing, we overwrite Spotify's natural queue
+    // with our pool so every set gets a genuinely shuffled order.
+    const queue = precomputedHighRef.current.length > 0
+      ? precomputedHighRef.current
+      : buildQueue("warmup", pool, playedIdsRef.current);
     if (queue.length > 0) {
       currentQueueRef.current = queue;
       await withMuteTransition(async () => {
@@ -799,7 +795,10 @@ function WorkoutInner() {
           body: JSON.stringify({ uris: queue }),
         });
       });
-      console.log(`[Start] Queue built on start — ${queue.length} HIGH tracks`);
+      // Mark sent tracks as played so the next recompute builds a non-overlapping queue
+      for (const uri of queue) playedIdsRef.current.add(uri.replace("spotify:track:", ""));
+      recomputeQueues();
+      console.log(`[Start] Shuffled queue sent — ${queue.length} HIGH tracks`);
     }
     setWorkoutState("warmup");
   };
