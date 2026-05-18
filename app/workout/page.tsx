@@ -103,6 +103,10 @@ function WorkoutInner() {
   // True once idle-state BPM correction has run (prevents re-entry)
   const correctionAppliedRef = useRef(false);
   const fadeUpRef = useRef<(vol: number) => Promise<void>>(async () => {});
+  const precomputedHighSkipsRef = useRef<number | null>(null);
+  const precomputedLowSkipsRef = useRef<number | null>(null);
+  const precomputeSkipCountsRef = useRef<() => Promise<void>>(async () => {});
+  const skipToTargetBpmRef = useRef<(state: WorkoutState) => Promise<boolean>>(async () => false);
 
   const currentExercise = exercises[currentExerciseIndex];
   const totalSets = exercises.reduce((acc, ex) => acc + ex.sets, 0);
@@ -214,48 +218,21 @@ function WorkoutInner() {
 
   useEffect(() => { withMuteTransitionRef.current = withMuteTransition; }, [withMuteTransition]);
 
-  // At a state transition: find a BPM-matching track in the upcoming Spotify queue and get
-  // it playing. If next track already matches, skip once. Otherwise POST the candidate once
-  // to guarantee it appears, then skip forward (verifying BPM) until it is confirmed playing.
-  // Never pushes lookahead — one POST per transition to avoid queue accumulation.
-  const nudgeBpmForState = useCallback(async (state: WorkoutState): Promise<boolean> => {
-    if (!session?.accessToken) return false;
-    if (state === "idle" || state === "done") return false;
-
-    // Lazily resolve device
-    if (!deviceIdRef.current) {
-      try {
-        const dr = await spotifyFetch("https://api.spotify.com/v1/me/player/devices", {
-          headers: { Authorization: `Bearer ${session.accessToken}` },
-        });
-        if (dr.ok) {
-          const { devices } = await dr.json();
-          const d = devices?.find((d: any) => d.is_active) ?? devices?.[0];
-          if (d) deviceIdRef.current = d.id;
-        }
-      } catch { /* non-fatal */ }
-    }
-    if (!deviceIdRef.current) {
-      console.log("[Nudge] No device available");
-      return false;
-    }
-
-    // Snapshot upcoming queue from Spotify
-    let upcomingTracks: { id: string; name: string; artists: string[] }[] = [];
+  // Fetch queue snapshot, BPM-enrich unknowns, compute how many skips to the next HIGH and LOW track.
+  const precomputeSkipCounts = useCallback(async () => {
+    if (!session?.accessToken) return;
+    let allTracks: { id: string; name: string; artists: string[] }[] = [];
     let currentlyPlayingId: string | null = null;
     try {
       const qRes = await fetch("/api/queue-tracks");
       if (qRes.ok) {
         const body = await qRes.json();
-        upcomingTracks = body.tracks ?? [];
+        allTracks = body.tracks ?? [];
         currentlyPlayingId = body.currentlyPlayingId ?? null;
       }
     } catch { /* non-fatal */ }
 
-    // BPM-enrich any tracks not already in the local cache
-    const unknownTracks = upcomingTracks.filter(
-      t => !trackPoolRef.current.some(p => p.id === t.id)
-    );
+    const unknownTracks = allTracks.filter(t => !trackPoolRef.current.some(p => p.id === t.id));
     if (unknownTracks.length > 0) {
       try {
         const bpmRes = await fetch("/api/playlist-bpm", {
@@ -272,97 +249,71 @@ function WorkoutInner() {
           ];
           const existingIds = new Set(trackPoolRef.current.map(t => t.id));
           const added = enriched.filter(t => !existingIds.has(t.id));
-          if (added.length > 0) {
-            trackPoolRef.current = [...trackPoolRef.current, ...added];
-            console.log(`[Nudge] Pool +${added.length} tracks (total: ${trackPoolRef.current.length})`);
-          }
+          if (added.length > 0) trackPoolRef.current = [...trackPoolRef.current, ...added];
         }
       } catch { /* non-fatal */ }
     }
 
-    // wantHigh is determined by the INCOMING state — not the outgoing one
-    const wantHigh = state === "warmup" || state === "exercising";
-    const bucket = wantHigh ? "HIGH" : "LOW";
-    const getBpm = (id: string) => trackPoolRef.current.find(p => p.id === id)?.bpm;
-    const matchesBucket = (id: string) => {
-      const bpm = getBpm(id);
-      return bpm != null && (bpm >= HIGH_BPM_CUTOFF) === wantHigh;
-    };
-
-    // Upcoming tracks, excluding the currently-playing track
-    const upcoming = upcomingTracks.filter(t => t.id !== currentlyPlayingId);
-    console.log(`[Nudge] state=${state} target=${bucket} — ${upcoming.length} upcoming tracks`);
-
-    // Fast path: next track already has the right BPM — skip to it, no POST needed
-    if (upcoming.length > 0 && matchesBucket(upcoming[0].id)) {
-      console.log(`[Nudge] Next "${upcoming[0].name}" already ${bucket} (${getBpm(upcoming[0].id)} BPM) — skip only, no queue change`);
-      await withMuteTransition(async () => {
-        lastCommandRef.current = Date.now();
-        await spotifyFetch("https://api.spotify.com/v1/me/player/next", {
-          method: "POST",
-          headers: { Authorization: `Bearer ${session!.accessToken!}` },
-        });
-      });
-      playedIdsRef.current.add(upcoming[0].id);
-      return true;
+    const upcoming = allTracks.filter(t => t.id !== currentlyPlayingId);
+    let highSkips: number | null = null;
+    let lowSkips: number | null = null;
+    for (let i = 0; i < upcoming.length; i++) {
+      const bpm = trackPoolRef.current.find(p => p.id === upcoming[i].id)?.bpm;
+      if (bpm == null) continue;
+      if (highSkips === null && bpm >= HIGH_BPM_CUTOFF) highSkips = i + 1;
+      if (lowSkips === null && bpm < HIGH_BPM_CUTOFF) lowSkips = i + 1;
+      if (highSkips !== null && lowSkips !== null) break;
     }
+    precomputedHighSkipsRef.current = highSkips;
+    precomputedLowSkipsRef.current = lowSkips;
+    console.log(`[Precompute] HIGH in ${highSkips ?? "none"} skip(s), LOW in ${lowSkips ?? "none"} skip(s)`);
+  }, [session]);
 
-    // Find the first candidate with the correct BPM bucket anywhere in the upcoming queue
-    const candidate = upcoming.find(t => matchesBucket(t.id));
-    if (!candidate) {
-      console.log(`[Nudge] No ${bucket} track found in upcoming queue — keeping current`);
+  useEffect(() => { precomputeSkipCountsRef.current = precomputeSkipCounts; }, [precomputeSkipCounts]);
+
+  // Fire N skips to land on the correct BPM bucket. Never POSTs to queue.
+  const skipToTargetBpm = useCallback(async (state: WorkoutState): Promise<boolean> => {
+    if (!session?.accessToken) return false;
+    if (state === "idle" || state === "done") return false;
+    const wantHigh = state === "warmup" || state === "exercising";
+    const skipCount = wantHigh ? precomputedHighSkipsRef.current : precomputedLowSkipsRef.current;
+    const bucket = wantHigh ? "HIGH" : "LOW";
+    if (skipCount === null) {
+      console.log(`[Skip] No pre-computed ${bucket} target in queue — keeping current`);
       setToastMessage(`No ${wantHigh ? "high" : "low"} BPM track found nearby — keeping current`);
       return false;
     }
-
-    console.log(`[Nudge] Pushing "${candidate.name}" (${getBpm(candidate.id) ?? "?"} BPM) to queue end, then skipping to it`);
-
+    console.log(`[Skip] state=${state} target=${bucket} — firing ${skipCount} skip(s)`);
     await withMuteTransition(async () => {
       lastCommandRef.current = Date.now();
-
-      // POST the candidate once to guarantee it appears — no lookahead to avoid accumulation
-      await spotifyFetch(
-        `https://api.spotify.com/v1/me/player/queue?uri=spotify%3Atrack%3A${candidate.id}`,
-        { method: "POST", headers: { Authorization: `Bearer ${session!.accessToken!}` } }
-      );
-
-      // Skip forward until a track with the correct BPM bucket is confirmed playing (up to 5 tries)
-      for (let attempt = 0; attempt < 5; attempt++) {
+      for (let i = 0; i < skipCount; i++) {
         await spotifyFetch("https://api.spotify.com/v1/me/player/next", {
           method: "POST",
           headers: { Authorization: `Bearer ${session!.accessToken!}` },
         });
-
-        await new Promise(r => setTimeout(r, 500));
-
-        const cpRes = await spotifyFetch("https://api.spotify.com/v1/me/player/currently-playing", {
-          headers: { Authorization: `Bearer ${session!.accessToken!}` },
-        });
-        if (!cpRes.ok || cpRes.status === 204) break;
-
+      }
+      await new Promise(r => setTimeout(r, 500));
+      const cpRes = await spotifyFetch("https://api.spotify.com/v1/me/player/currently-playing", {
+        headers: { Authorization: `Bearer ${session!.accessToken!}` },
+      });
+      if (cpRes.ok && cpRes.status !== 204) {
         const cpData = await cpRes.json();
         const nowId = cpData?.item?.id;
-        if (!nowId) break;
-
-        const nowBpm = getBpm(nowId);
-        const nowMatches = matchesBucket(nowId);
-        console.log(`[Nudge] Skip ${attempt + 1}: "${cpData.item?.name}" (${nowBpm ?? "?"} BPM) — ${nowMatches ? `confirmed ${bucket}` : `wrong BPM, skipping again`}`);
-
-        if (nowMatches) {
-          playedIdsRef.current.add(nowId);
-          break;
-        }
+        const nowBpm = nowId ? trackPoolRef.current.find(p => p.id === nowId)?.bpm : null;
+        console.log(`[Skip] Landed on "${cpData?.item?.name}" (${nowBpm ?? "?"} BPM)`);
+        if (nowId) playedIdsRef.current.add(nowId);
       }
     });
-
-    playedIdsRef.current.add(candidate.id);
+    precomputeSkipCountsRef.current();
     return true;
   }, [session, spotifyFetch, withMuteTransition]);
 
-  const nudgeBpmForStateRef = useRef(nudgeBpmForState);
-  useEffect(() => { nudgeBpmForStateRef.current = nudgeBpmForState; }, [nudgeBpmForState]);
+  useEffect(() => { skipToTargetBpmRef.current = skipToTargetBpm; }, [skipToTargetBpm]);
 
-  useEffect(() => { workoutStateRef.current = workoutState; }, [workoutState]);
+  useEffect(() => {
+    workoutStateRef.current = workoutState;
+    console.log(`[State] → ${workoutState}`);
+  }, [workoutState]);
 
   // Fetch current track and update UI. Also handles idle-state BPM correction and track-change bookkeeping.
   const fetchCurrentTrack = useCallback(async () => {
@@ -448,8 +399,9 @@ function WorkoutInner() {
           // Confirmed HIGH BPM — fade up, done
           await fadeUpRef.current(originalVolumeRef.current);
         } else {
-          // LOW or unknown — nudge to a HIGH BPM track; withMuteTransition sees vol=0, restores correctly
-          const switched = await nudgeBpmForStateRef.current("warmup");
+          // LOW or unknown — precompute then skip to HIGH; withMuteTransition sees vol=0, restores correctly
+          await precomputeSkipCountsRef.current();
+          const switched = await skipToTargetBpmRef.current("warmup");
           if (!switched) await fadeUpRef.current(originalVolumeRef.current);
         }
       } finally {
@@ -471,10 +423,12 @@ function WorkoutInner() {
       if (prevTrackIdRef.current) playedIdsRef.current.add(prevTrackIdRef.current);
       prevTrackIdRef.current = newId;
 
+      const trackBpm = trackPoolRef.current.find(p => p.id === newId)?.bpm;
       console.log(
         `[Track] ♪ "${data?.item?.name}" by ${data?.item?.artists?.[0]?.name}`,
-        `| state: ${workoutStateRef.current} | pool: ${trackPoolRef.current.length} tracks`
+        `| bpm: ${trackBpm ?? "unknown"} | state: ${workoutStateRef.current} | pool: ${trackPoolRef.current.length} tracks`
       );
+      precomputeSkipCountsRef.current();
     }
 
     setNoDevice(false);
@@ -534,7 +488,7 @@ function WorkoutInner() {
       if (remaining <= 0) {
         clearInterval(timerRef.current!);
         setWorkoutState("exercising");
-        nudgeBpmForStateRef.current("exercising");
+        skipToTargetBpmRef.current("exercising");
       }
     }, 1000);
     return () => clearInterval(timerRef.current!);
@@ -593,12 +547,12 @@ function WorkoutInner() {
           setCurrentExerciseIndex(pairedAIdx);
           setCurrentSet(currentSet + 1);
           setWorkoutState("resting");
-          setTimeout(() => nudgeBpmForStateRef.current("resting"), 500);
+          setTimeout(() => skipToTargetBpmRef.current("resting"), 500);
         } else if (currentExerciseIndex + 1 < exercises.length) {
           setCurrentExerciseIndex(currentExerciseIndex + 1);
           setCurrentSet(1);
           setWorkoutState("resting");
-          setTimeout(() => nudgeBpmForStateRef.current("resting"), 500);
+          setTimeout(() => skipToTargetBpmRef.current("resting"), 500);
         } else {
           setWorkoutState("done");
         }
@@ -609,12 +563,12 @@ function WorkoutInner() {
     if (currentSet < currentExercise.sets) {
       setCurrentSet(currentSet + 1);
       setWorkoutState("resting");
-      setTimeout(() => nudgeBpmForStateRef.current("resting"), 500);
+      setTimeout(() => skipToTargetBpmRef.current("resting"), 500);
     } else if (currentExerciseIndex < exercises.length - 1) {
       setCurrentExerciseIndex(currentExerciseIndex + 1);
       setCurrentSet(1);
       setWorkoutState("resting");
-      setTimeout(() => nudgeBpmForStateRef.current("resting"), 500);
+      setTimeout(() => skipToTargetBpmRef.current("resting"), 500);
     } else {
       setWorkoutState("done");
     }
@@ -657,8 +611,8 @@ function WorkoutInner() {
     if (isHigh === wantHigh) return false;
 
     console.log(`[BPM check] "${cpData.item?.name}" is ${isHigh ? "HIGH" : "LOW"} (${inPool.bpm} BPM) but state is ${ws} — correcting`);
-    // Already muted. nudgeBpmForState → withMuteTransition reads originalVolumeRef (not current 0) → restores correctly.
-    return await nudgeBpmForStateRef.current(ws);
+    await precomputeSkipCountsRef.current();
+    return await skipToTargetBpmRef.current(ws);
   }, [session, spotifyFetch]);
 
   const fadeUp = useCallback(async (vol: number) => {
@@ -775,6 +729,8 @@ function WorkoutInner() {
     deviceIdRef.current = null;
     lastCommandRef.current = 0;
     rateLimitUntilRef.current = 0;
+    precomputedHighSkipsRef.current = null;
+    precomputedLowSkipsRef.current = null;
 
     console.log("[Session reset] handleEndWorkout called — all session state cleared");
 
