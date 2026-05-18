@@ -47,7 +47,7 @@ export default function Workout() {
 
 function WorkoutInner() {
   const searchParams = useSearchParams();
-  const { data: session } = useSession();
+  const { data: session, update: updateSession } = useSession();
   const router = useRouter();
 
   const workoutId = searchParams.get("workout_id");
@@ -130,21 +130,38 @@ function WorkoutInner() {
       });
   }, [workoutId]);
 
-  // Global Spotify fetch wrapper — respects rate-limit headers.
+  // Global Spotify fetch wrapper — handles rate limits and transparent token refresh on 401.
   const spotifyFetch = useCallback(async (url: string, options?: RequestInit): Promise<Response> => {
     if (Date.now() < rateLimitUntilRef.current) {
       const remaining = Math.ceil((rateLimitUntilRef.current - Date.now()) / 1000);
       console.log(`[Spotify] Rate limited for ${remaining}s more`);
       return new Response(null, { status: 429 });
     }
-    const res = await fetch(url, options);
+
+    let res = await fetch(url, options);
+
+    if (res.status === 401) {
+      console.log("[Spotify] 401 — refreshing token and retrying");
+      const updated = await updateSession();
+      const newToken = updated?.accessToken;
+      if (newToken) {
+        res = await fetch(url, {
+          ...options,
+          headers: {
+            ...(options?.headers as Record<string, string> ?? {}),
+            Authorization: `Bearer ${newToken}`,
+          },
+        });
+      }
+    }
+
     if (res.status === 429) {
       const retryAfter = parseInt(res.headers.get("retry-after") ?? "10", 10);
       console.log(`[Spotify] Rate limited — blocking ${retryAfter}s`);
       rateLimitUntilRef.current = Date.now() + retryAfter * 1000;
     }
     return res;
-  }, []);
+  }, [updateSession]);
 
   // Mute → run play command → wait for track start → fade volume back up.
   // Guarantees volume is always restored even if the transition errors.

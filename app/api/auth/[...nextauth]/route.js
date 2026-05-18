@@ -43,10 +43,14 @@ export const authOptions = {
         });
 
         const refreshed = await response.json();
+        if (!response.ok || !refreshed.access_token) {
+          return { ...token, error: "RefreshAccessTokenError" };
+        }
         return {
           ...token,
           accessToken: refreshed.access_token,
           expiresAt: Math.floor(Date.now() / 1000 + refreshed.expires_in),
+          ...(refreshed.refresh_token && { refreshToken: refreshed.refresh_token }),
           ...(refreshed.scope && { scope: refreshed.scope }),
         };
       } catch {
