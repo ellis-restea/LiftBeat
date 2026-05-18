@@ -219,6 +219,19 @@ Wired up: BottomNav tabs (light), workout-setup steppers/add/superset (light), s
 Settings toggles in SettingsTab persist to ls_sound / ls_haptic.
 
 
+Navigation & Back Button Decisions:
+
+Workout screen back button: shows a confirmation dialog → on confirm, stops music + navigates away. Dialog itself does not touch music state — only the confirm action does.
+Edit workout (workout-setup) back button: simple back navigation. Handle unsaved changes based on current save behavior.
+Onboarding flow: no back button at all.
+
+"Open Spotify" Empty State (workout screen, idle):
+
+When no queue is detected at preload, the Start Workout button is replaced by an "Open Spotify" button.
+Styling: green Spotify glow, pulse animation, deep-links to the Spotify app.
+Muted instruction line underneath explaining the user needs to play a playlist in Spotify first.
+Button swaps back to Start Workout automatically once a live queue is detected.
+
 Additional context:
 
 Do not ask me technical questions, make the best decisions for a clean gym app
@@ -230,3 +243,43 @@ Full screen color wash transitions (radial glow overlays, not background-color s
 commit everything to GitHub with a descriptive message
 
 when to commit: Unit of Work: When you finish a single function, fix a bug, or complete a specific subtask. Working State: Every time your code is in a stable, buildable state. Before Risky Changes: Just before you attempt a major refactor or "try something out" that might break things. End of Session: At least once per day to ensure your local progress is backed up.
+
+Session Summary — May 18 2026:
+
+Architecture change: moved from queue injection to skip-only navigation.
+The previous system used POST /v1/me/player/queue to push songs into Spotify's queue. This caused stale songs from previous sessions to linger in the queue and bleed into new workouts. Spotify has no endpoint to clear the queue so injection was abandoned entirely.
+New approach: never inject songs, only skip through what Spotify already has naturally queued.
+
+Current queue architecture:
+- On every song change, fetch upcoming queue via GET /v1/me/player/queue
+- Look up BPM for each song in cache, fetch and cache any unknown songs silently
+- Pre-compute and store in refs: skips to next HIGH BPM song, skips to next LOW BPM song
+- On state transition: skip counts already known, fire exact N skips in rapid succession, one confirmation poll at end, no unnecessary skips
+- On user manual skip: detect via track poll, if new song doesn't match current state fire pre-computed skips immediately
+- On idle playback detection: mute first before anything, then use skip counts to land on HIGH BPM song
+
+Console logs always present:
+- Current song name and BPM on every track change
+- Current workout state on every state change
+- Skips to next HIGH and LOW BPM song every time pre-computation runs
+
+Bugs fixed May 18 2026:
+- Stale playlist bleeding into new session — caused by queue injection, fixed by removing all POST /v1/me/player/queue calls
+- Redundant BPM check on Start Workout press removed — idle state already guarantees HIGH BPM before user hits start
+- Wrong BPM bucket being pushed on state transition — state transition was reading outgoing state not incoming
+- Session refs not clearing on End Workout — fixed, all refs now explicitly reset
+- 401 token expiry on Spotify API calls — NextAuth auto-refresh implemented
+- Blip of wrong audio on playlist start — mute now fires as absolute first action before any BPM check
+
+Confirmed Spotify limitations (dev mode):
+- GET /v1/playlists/{id}/tracks returns 403 — playlist track fetching permanently blocked in dev mode
+- GET /v1/me/player/queue returns max 20 upcoming songs — rolling window, not a fixed pool
+- No endpoint exists to clear the Spotify queue
+- Spotify extended access requires >1% approval odds and 250k monthly users — not a near term option
+- Playlist intelligence feature blocked until out of dev mode — can't link cached tracks to playlists without playlist endpoint
+
+Deferred to post-MVP:
+- Responsive vs Chill song switching mode
+- Workout resume/save state on back button
+- Manual song order change handling
+- Playlist intelligence feature
