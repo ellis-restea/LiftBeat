@@ -102,6 +102,7 @@ function WorkoutInner() {
   const withMuteTransitionRef = useRef<(fn: () => Promise<void>) => Promise<void>>(async (fn) => fn());
   // True once idle-state BPM correction has run (prevents re-entry)
   const correctionAppliedRef = useRef(false);
+  const fadeUpRef = useRef<(vol: number) => Promise<void>>(async () => {});
 
   const currentExercise = exercises[currentExerciseIndex];
   const totalSets = exercises.reduce((acc, ex) => acc + ex.sets, 0);
@@ -198,9 +199,9 @@ function WorkoutInner() {
 
   // Scan the upcoming Spotify queue for a BPM-matching track, push it to the front via
   // POST /queue, then skip to it. Spotify manages the playlist — the app only nudges BPM.
-  const nudgeBpmForState = useCallback(async (state: WorkoutState): Promise<void> => {
-    if (!session?.accessToken) return;
-    if (state === "idle" || state === "done") return;
+  const nudgeBpmForState = useCallback(async (state: WorkoutState): Promise<boolean> => {
+    if (!session?.accessToken) return false;
+    if (state === "idle" || state === "done") return false;
 
     // Lazily resolve device
     if (!deviceIdRef.current) {
@@ -217,7 +218,7 @@ function WorkoutInner() {
     }
     if (!deviceIdRef.current) {
       console.log("[Nudge] No device available");
-      return;
+      return false;
     }
 
     // Snapshot upcoming queue from Spotify
@@ -276,30 +277,35 @@ function WorkoutInner() {
     if (candidates.length === 0) {
       console.log(`[Nudge] No ${bucket} match in upcoming queue — keeping current track`);
       setToastMessage(`No ${wantHigh ? "high" : "low"} BPM track found nearby — keeping current`);
-      return;
+      return false;
     }
 
     const primary = candidates[0];
-    const lookahead = candidates[1] ?? null;
+    const lookahead1 = candidates[1] ?? null;
+    const lookahead2 = candidates[2] ?? null;
 
     await withMuteTransition(async () => {
       lastCommandRef.current = Date.now();
 
-      // Push primary to front of Spotify queue (plays next after current track ends / skip)
       await spotifyFetch(
         `https://api.spotify.com/v1/me/player/queue?uri=spotify%3Atrack%3A${primary.id}`,
         { method: "POST", headers: { Authorization: `Bearer ${session!.accessToken!}` } }
       );
 
-      // Push lookahead for seamless continuation after primary ends
-      if (lookahead) {
+      if (lookahead1) {
         await spotifyFetch(
-          `https://api.spotify.com/v1/me/player/queue?uri=spotify%3Atrack%3A${lookahead.id}`,
+          `https://api.spotify.com/v1/me/player/queue?uri=spotify%3Atrack%3A${lookahead1.id}`,
           { method: "POST", headers: { Authorization: `Bearer ${session!.accessToken!}` } }
         );
       }
 
-      // Skip to the pushed track
+      if (lookahead2) {
+        await spotifyFetch(
+          `https://api.spotify.com/v1/me/player/queue?uri=spotify%3Atrack%3A${lookahead2.id}`,
+          { method: "POST", headers: { Authorization: `Bearer ${session!.accessToken!}` } }
+        );
+      }
+
       await spotifyFetch("https://api.spotify.com/v1/me/player/next", {
         method: "POST",
         headers: { Authorization: `Bearer ${session!.accessToken!}` },
@@ -307,10 +313,12 @@ function WorkoutInner() {
     });
 
     playedIdsRef.current.add(primary.id);
-    if (lookahead) playedIdsRef.current.add(lookahead.id);
+    if (lookahead1) playedIdsRef.current.add(lookahead1.id);
+    if (lookahead2) playedIdsRef.current.add(lookahead2.id);
 
     const primaryBpm = trackPoolRef.current.find(t => t.id === primary.id)?.bpm;
     console.log(`[Nudge] Pushed "${primary.name}" (${primaryBpm ?? "?"} BPM) → skipped to it`);
+    return true;
   }, [session, spotifyFetch, withMuteTransition]);
 
   const nudgeBpmForStateRef = useRef(nudgeBpmForState);
@@ -339,26 +347,70 @@ function WorkoutInner() {
     const data = await res.json();
     setSpotifyPlaying(data?.is_playing ?? false);
 
-    // Idle-state correction: ensure a HIGH BPM track plays before the workout starts.
-    // Mute-first is handled inside nudgeBpmForState → withMuteTransition.
+    // Idle-state correction: mute immediately, enrich BPM inline, then decide whether to switch.
     if (
       workoutStateRef.current === "idle" &&
       !correctionAppliedRef.current &&
       data?.is_playing &&
       data?.item?.id
     ) {
-      const inPool = trackPoolRef.current.find(t => t.id === data.item.id);
-      const isHighBpm = inPool?.bpm != null && inPool.bpm >= HIGH_BPM_CUTOFF;
-      console.log(`[Idle correction] "${data.item.name}" — bpm: ${inPool?.bpm ?? "unknown"}, isHigh: ${isHighBpm}`);
+      correctionAppliedRef.current = true;
+      setIsTransitioning(true);
+      isTransitioningRef.current = true;
 
-      if (isHighBpm) {
-        correctionAppliedRef.current = true;
-        console.log("[Idle correction] Already HIGH BPM — no switch needed");
-      } else if (trackPoolRef.current.length > 0) {
-        correctionAppliedRef.current = true; // set before await to prevent re-entry on next poll
-        await nudgeBpmForStateRef.current("warmup");
+      try {
+        // Mute immediately so the user never hears a wrong-BPM song before the workout starts
+        await spotifyFetch(`https://api.spotify.com/v1/me/player/volume?volume_percent=0`, {
+          method: "PUT",
+          headers: { Authorization: `Bearer ${session!.accessToken!}` },
+        });
+
+        // Enrich BPM for the current track if not already cached
+        let inPool = trackPoolRef.current.find(t => t.id === data.item.id);
+        if (!inPool) {
+          try {
+            const bpmRes = await fetch("/api/playlist-bpm", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                tracks: [{
+                  id: data.item.id,
+                  name: data.item.name,
+                  artists: data.item.artists?.map((a: { name: string }) => a.name) ?? [],
+                }],
+              }),
+            });
+            if (bpmRes.ok) {
+              const result = await bpmRes.json();
+              const enriched: TrackBpm[] = [
+                ...(result.high ?? []),
+                ...(result.low ?? []),
+                ...(result.unknown ?? []),
+              ];
+              const found = enriched.find(t => t.id === data.item.id);
+              if (found) {
+                trackPoolRef.current = [...trackPoolRef.current, found];
+                inPool = found;
+              }
+            }
+          } catch { /* non-fatal */ }
+        }
+
+        const isConfirmedLow = inPool?.bpm != null && inPool.bpm < HIGH_BPM_CUTOFF;
+        console.log(`[Idle correction] "${data.item.name}" — bpm: ${inPool?.bpm ?? "unknown"}, switch: ${isConfirmedLow}`);
+
+        if (isConfirmedLow) {
+          // Already muted; withMuteTransition sees vol=0 → keeps originalVolumeRef → restores correctly
+          const switched = await nudgeBpmForStateRef.current("warmup");
+          if (!switched) await fadeUpRef.current(originalVolumeRef.current);
+        } else {
+          // HIGH or unknown — just restore volume
+          await fadeUpRef.current(originalVolumeRef.current);
+        }
+      } finally {
+        setIsTransitioning(false);
+        isTransitioningRef.current = false;
       }
-      // pool empty → fall through to UI update, retry correction on next poll
       return;
     }
 
@@ -562,8 +614,7 @@ function WorkoutInner() {
 
     console.log(`[BPM check] "${cpData.item?.name}" is ${isHigh ? "HIGH" : "LOW"} (${inPool.bpm} BPM) but state is ${ws} — correcting`);
     // Already muted. nudgeBpmForState → withMuteTransition reads originalVolumeRef (not current 0) → restores correctly.
-    await nudgeBpmForStateRef.current(ws);
-    return true;
+    return await nudgeBpmForStateRef.current(ws);
   }, [session, spotifyFetch]);
 
   const fadeUp = useCallback(async (vol: number) => {
@@ -575,6 +626,7 @@ function WorkoutInner() {
       if (i < 5) await new Promise(r => setTimeout(r, 80));
     }
   }, [session, spotifyFetch]);
+  useEffect(() => { fadeUpRef.current = fadeUp; }, [fadeUp]);
 
   const skipTrack = async () => {
     if (!session?.accessToken) return;
