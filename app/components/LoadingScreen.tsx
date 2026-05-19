@@ -65,7 +65,7 @@ export default function LoadingScreen() {
 
   return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-[#0a0a0f] text-white gap-6">
-      <h1 className="text-4xl font-bold tracking-wide">LiftSync</h1>
+      <h1 className="text-4xl font-bold tracking-wide">LiftBeat</h1>
       <div className="flex flex-col items-center gap-4">
         <span
           className={`text-blue-500 select-none ${star.size}`}

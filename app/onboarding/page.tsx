@@ -21,7 +21,7 @@ const slides = [
   },
   {
     tag: "The Solution",
-    headline: "LiftSync does it automatically.",
+    headline: "LiftBeat does it automatically.",
     body: "High BPM during your set. Low BPM during rest. Synced to your Spotify, timed to your workout. No touching your phone. Just lift.",
     visual: "⚡",
     cta: "Connect Spotify & Get Started",

@@ -1,8 +1,8 @@
 @AGENTS.md
 
 
-LiftSync — Project Summary & Handoff
-What is LiftSync:
+LiftBeat — Project Summary & Handoff
+What is LiftBeat:
 A web app that controls the user's Spotify playback during gym workouts. High BPM songs play during sets, low BPM songs play during rest periods. Automatically switches based on a workout timer. Built with Next.js, Supabase, and Spotify API.
 Tech Stack:
 
@@ -185,7 +185,7 @@ Add monthly subscription once meaningful traction is gained
 Early users may get founding member discount or stay free forever
 Ad supported free tier (TBD)
 
-App Name: LiftSync
+App Name: LiftBeat
 Design Language:
 
 Dark base: bg-[#0a0a0f] (very dark navy-black)
@@ -205,7 +205,7 @@ User Identity:
 
 No email returned in Spotify session — using session.user.name as user_id in Supabase
 
-GitHub repo: https://github.com/babacaca123/LiftSync
+GitHub repo: https://github.com/babacaca123/LiftBeat
 
 
 Sound & Haptic Feedback (lib/feedback.ts):

@@ -65,7 +65,7 @@ export default function SettingsTab() {
     <div className="p-8">
       <div className="max-w-md mx-auto">
         <h1 className="text-3xl font-bold tracking-wide mb-1">Settings</h1>
-        <p className="text-[#64748b] mb-8">Your LiftSync account.</p>
+        <p className="text-[#64748b] mb-8">Your LiftBeat account.</p>
 
         {/* Account */}
         <div className="card-metallic rounded-xl p-5 mb-4">

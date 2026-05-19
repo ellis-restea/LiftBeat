@@ -21,7 +21,7 @@ export default function Home() {
       {/* Hero */}
       <div className="flex-1 flex flex-col items-center justify-center text-center px-8 gap-6">
         <div className="mb-4">
-          <h1 className="text-5xl font-black tracking-wide mb-3">LiftSync</h1>
+          <h1 className="text-5xl font-black tracking-wide mb-3">LiftBeat</h1>
           <p className="text-[#64748b] text-lg max-w-xs">
             Your music. Your rhythm. Your best workout yet.
           </p>

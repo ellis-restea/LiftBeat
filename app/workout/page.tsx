@@ -128,7 +128,7 @@ function WorkoutInner() {
       .eq("workout_id", workoutId)
       .order("order_index")
       .then(({ data, error }) => {
-        if (error) console.error("[LiftSync] Exercise load error:", error);
+        if (error) console.error("[LiftBeat] Exercise load error:", error);
         if (data) setExercises(data);
         setLoading(false);
       });
@@ -909,7 +909,7 @@ function WorkoutInner() {
       <div className="relative min-h-screen text-white flex flex-col items-center justify-between p-8" style={{ zIndex: 1 }}>
         {premiumRequired && (
           <div className="fixed top-0 left-0 right-0 z-50 backdrop-blur-sm text-sm text-center py-2.5 px-4 bg-red-900/90 text-red-200">
-            LiftSync requires Spotify Premium
+            LiftBeat requires Spotify Premium
           </div>
         )}
 

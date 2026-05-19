@@ -160,7 +160,7 @@ function WorkoutSetupInner() {
         .from("exercises")
         .insert(exRows.map((r) => ({ ...r, workout_id: workout.id })));
       if (exErr) {
-        console.error("[LiftSync] Exercise insert failed:", exErr);
+        console.error("[LiftBeat] Exercise insert failed:", exErr);
         await supabase.from("workouts").delete().eq("id", workout.id);
         setSaveError(
           `Failed to save exercises: ${exErr.message}. If you see "column superset_with does not exist", run this SQL in Supabase: ALTER TABLE exercises ADD COLUMN superset_with integer;`
@@ -221,7 +221,7 @@ function WorkoutSetupInner() {
             </button>
           )}
           <div>
-            <h1 className="text-3xl font-bold tracking-wide">LiftSync</h1>
+            <h1 className="text-3xl font-bold tracking-wide">LiftBeat</h1>
             <p className="text-[#64748b] mt-1">{isEditing ? "Edit workout" : "Build your workout"}</p>
           </div>
         </div>

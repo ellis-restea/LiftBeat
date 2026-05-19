@@ -39,7 +39,7 @@ export default function MusicTab({ onDone }: Props) {
 
         {/* Subheading */}
         <p className="text-[#64748b] text-sm leading-relaxed">
-          LiftSync will learn your music over time — automatically mixing your playlists based on your workout state, tempo, and energy level.
+          LiftBeat will learn your music over time — automatically mixing your playlists based on your workout state, tempo, and energy level.
         </p>
       </div>
     </div>
@@ -145,13 +145,13 @@ function MusicTabFull({ onDone }: Props) {
       <div className="max-w-2xl mx-auto">
         <h1 className="text-3xl font-bold tracking-wide mb-1">Music</h1>
         <p className="text-[#64748b] mb-6">
-          LiftSync switches between high and low BPM tracks during your workout.
+          LiftBeat switches between high and low BPM tracks during your workout.
         </p>
 
         <div className="card-metallic rounded-xl p-4 mb-6 text-sm text-[#94a3b8] flex gap-3">
           <span className="text-blue-500 text-lg">💡</span>
           <p>
-            Select playlists with a mix of tempos for best results. LiftSync handles the rest.
+            Select playlists with a mix of tempos for best results. LiftBeat handles the rest.
           </p>
         </div>
 

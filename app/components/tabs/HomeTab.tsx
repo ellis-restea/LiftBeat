@@ -57,7 +57,7 @@ export default function HomeTab({ hasPlaylists }: Props) {
         {/* Header */}
         <div className="flex justify-between items-center mb-8">
           <div>
-            <h1 className="text-3xl font-bold tracking-wide">LiftSync</h1>
+            <h1 className="text-3xl font-bold tracking-wide">LiftBeat</h1>
             <p className="text-[#64748b] text-sm mt-1">
               Hey, {session?.user?.name?.split(" ")[0]} 👋
             </p>
