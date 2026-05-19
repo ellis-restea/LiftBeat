@@ -14,10 +14,11 @@ Running locally on http://127.0.0.1:3000
 
 Current File Structure:
 app/
-  page.tsx              — Landing page (Get Started / Log In)
+  page.tsx              — Splash screen: always shown on app open, 1s minimum, routes to /dashboard or /landing
+  landing/page.tsx      — Landing page (Get Started / Log In) — unauthenticated users land here after splash
   layout.tsx            — Root layout with SessionProvider
   providers.tsx         — Client-side SessionProvider wrapper
-  globals.css           — Tailwind imports + .skeleton shimmer + tabEnter + swish-border animations
+  globals.css           — Tailwind imports + .skeleton shimmer + tabEnter + swish-border + eq-beat animations
   onboarding/page.tsx   — 3 slide onboarding for new users
   dashboard/page.tsx    — Thin AppShell wrapper (initialTab="home")
   stats/page.tsx        — Thin AppShell wrapper (initialTab="stats")
@@ -31,7 +32,7 @@ app/
   components/
     AppShell.tsx        — SPA shell: manages tab state, persistent mounts, auth redirect, playlist check
     BottomNav.tsx       — Floating frosted-glass pill nav (320px, blur backdrop), sliding pill indicator
-    LoadingScreen.tsx   — Morphing star frames (✦✧✸✹✺…) cycling at 150ms, rotating messages
+    LoadingScreen.tsx   — 4 animated equalizer bars (kick/snare/hihat/bass) + app name, no messages
     tabs/
       HomeTab.tsx       — Saved workouts list with shimmer skeleton rows
       MusicTab.tsx      — Playlist selector with shimmer skeleton rows, pre-loads saved IDs
@@ -70,9 +71,11 @@ IMPORTANT — Supabase migration required (run in SQL Editor if not done):
 
 User Flows:
 New user:
-Landing page → Onboarding (3 slides) → Spotify login → Playlist select (saved to Supabase) → Workout setup → Workout screen
+Splash (/) → Landing (/landing) → Onboarding (3 slides) → Spotify login → Playlist select (saved to Supabase) → Workout setup → Workout screen
 Returning user:
-Landing page (detects session) → Logo/loading screen → Dashboard (saved workouts list + pencil icon to edit playlists) → Tap workout → Workout screen
+Splash (/) → Dashboard (saved workouts list + pencil icon to edit playlists) → Tap workout → Workout screen
+Logout flow:
+signOut({ callbackUrl: "/" }) → Splash → Landing (clean, no flicker)
 Important flow notes:
 
 Playlist select is ONE TIME during onboarding only
@@ -283,3 +286,33 @@ Deferred to post-MVP:
 - Workout resume/save state on back button
 - Manual song order change handling
 - Playlist intelligence feature
+
+Session Summary — May 19 2026:
+
+Rebrand: LiftSync → LiftBeat across entire codebase.
+Every instance of the old name replaced in all forms (LiftSync, liftsync, lift-sync, lift_sync).
+Files changed: CLAUDE.md, HomeTab.tsx, MusicTab.tsx, SettingsTab.tsx, onboarding/page.tsx,
+playlist-select/page.tsx, workout-setup/page.tsx, workout/page.tsx.
+package.json name was already "gymapp" — no change needed. No manifest.json found.
+Vercel project name (lift-sync-ashen) requires manual rename in Vercel dashboard — not done via code.
+GitHub repo was already renamed by user to LiftBeat before the session.
+Pending: run `git remote set-url origin https://github.com/babacaca123/LiftBeat.git` to sync local remote.
+
+Splash screen architecture:
+app/page.tsx is now a permanent splash router — always renders LoadingScreen, never the landing content.
+Enforces a 1s minimum display via useState + setTimeout so the animation is always visible.
+After 1s AND session resolved: authenticated → router.replace("/dashboard"), unauthenticated → router.replace("/landing").
+Uses router.replace (not push) so the splash never appears in the browser back stack.
+app/landing/page.tsx is a new file containing the former landing page content (hero, stat card, Get Started / Log In).
+AppShell unauthenticated redirect goes to "/" → splash → "/landing" — no loop since /landing doesn't redirect back.
+
+LoadingScreen redesign:
+Removed rotating star frames (✦✧✸✹✺), rotating interval, and all text messages.
+Replaced with 4 animated equalizer bars anchored at the bottom (flex items-end, transformOrigin: "bottom").
+Bars: kick (56px), snare (40px), hihat (26px), bass (50px) — each with its own named animation.
+Keyframes in globals.css: eq-kick (0.52s linear), eq-snare (0.52s linear offset 0.26s), eq-hihat (0.28s linear),
+  eq-bass (1.05s ease-in-out). Non-harmonic durations cause natural phase drift — never perfectly in sync.
+Each keyframe has fast attack (scaleY spike at 6–10%) and shaped decay (holds mid then falls) to feel percussive.
+Hi-hat has 3 rapid hits per cycle at unequal spacings (10%, 38%, 64%) for organic feel.
+Bass sustains at peak for 40% of cycle before falling — sub-note character.
+willChange: "transform, opacity" on each bar for GPU acceleration.
