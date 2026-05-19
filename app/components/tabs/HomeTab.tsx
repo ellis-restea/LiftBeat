@@ -1,6 +1,6 @@
 "use client";
 import { useSession, signOut } from "next-auth/react";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { feedback } from "@/lib/feedback";
@@ -14,6 +14,19 @@ export default function HomeTab({ hasPlaylists }: Props) {
   const [workouts, setWorkouts] = useState<Workout[]>([]);
   const [loading, setLoading] = useState(true);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [avatarMenuOpen, setAvatarMenuOpen] = useState(false);
+  const avatarRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!avatarMenuOpen) return;
+    const handleClick = (e: MouseEvent) => {
+      if (avatarRef.current && !avatarRef.current.contains(e.target as Node)) {
+        setAvatarMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [avatarMenuOpen]);
 
   useEffect(() => {
     if (!session?.user?.name) return;
@@ -49,12 +62,36 @@ export default function HomeTab({ hasPlaylists }: Props) {
               Hey, {session?.user?.name?.split(" ")[0]} 👋
             </p>
           </div>
-          <button
-            onClick={() => signOut({ callbackUrl: "/" })}
-            className="text-[#64748b] hover:text-white text-sm transition"
-          >
-            Sign out
-          </button>
+          <div ref={avatarRef} className="relative">
+            <button
+              onClick={() => setAvatarMenuOpen((v) => !v)}
+              className="w-9 h-9 rounded-full overflow-hidden border border-white/10 hover:border-blue-500/50 transition active:scale-95 focus:outline-none"
+              aria-label="Account menu"
+            >
+              {session?.user?.image ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={session.user.image}
+                  alt={session.user.name ?? "Profile"}
+                  className="w-full h-full object-cover"
+                />
+              ) : (
+                <div className="w-full h-full bg-[#1e293b] flex items-center justify-center text-sm font-semibold text-[#94a3b8]">
+                  {session?.user?.name?.[0]?.toUpperCase() ?? "?"}
+                </div>
+              )}
+            </button>
+            {avatarMenuOpen && (
+              <div className="absolute right-0 top-11 z-50 min-w-[120px] bg-[#111827] border border-white/10 rounded-xl shadow-xl overflow-hidden">
+                <button
+                  onClick={() => { setAvatarMenuOpen(false); signOut({ callbackUrl: "/" }); }}
+                  className="w-full text-left px-4 py-3 text-sm text-[#f1f5f9] hover:bg-white/5 transition"
+                >
+                  Sign out
+                </button>
+              </div>
+            )}
+          </div>
         </div>
 
         <h2 className="text-lg font-semibold tracking-wide mb-4">Your Workouts</h2>
