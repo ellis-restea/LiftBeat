@@ -28,6 +28,11 @@
   to { transform: rotate(360deg); }
 }
 
+@keyframes eq-bar {
+  0%, 100% { transform: scaleY(0.15); }
+  50%       { transform: scaleY(1); }
+}
+
 /* Bubble pill transition animation — organic warp + glass sheen */
 @keyframes bubbleTransit {
   0% {
