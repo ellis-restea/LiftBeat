@@ -28,9 +28,40 @@
   to { transform: rotate(360deg); }
 }
 
-@keyframes eq-bar {
-  0%, 100% { transform: scaleY(0.15); }
-  50%       { transform: scaleY(1); }
+/* Kick: hard snap up, fast decay tail */
+@keyframes eq-kick {
+  0%   { transform: scaleY(0.08); opacity: 0.4;  }
+  6%   { transform: scaleY(1.0);  opacity: 1;    }
+  25%  { transform: scaleY(0.35); opacity: 0.75; }
+  100% { transform: scaleY(0.08); opacity: 0.4;  }
+}
+
+/* Snare: medium punch, offbeat */
+@keyframes eq-snare {
+  0%   { transform: scaleY(0.1);  opacity: 0.35; }
+  9%   { transform: scaleY(0.72); opacity: 1;    }
+  30%  { transform: scaleY(0.22); opacity: 0.6;  }
+  100% { transform: scaleY(0.1);  opacity: 0.35; }
+}
+
+/* Hi-hat: rapid triple flicker, slight velocity variation each hit */
+@keyframes eq-hihat {
+  0%   { transform: scaleY(0.1);  opacity: 0.4;  }
+  10%  { transform: scaleY(0.9);  opacity: 1;    }
+  26%  { transform: scaleY(0.1);  opacity: 0.4;  }
+  38%  { transform: scaleY(0.78); opacity: 0.92; }
+  52%  { transform: scaleY(0.1);  opacity: 0.4;  }
+  64%  { transform: scaleY(0.84); opacity: 0.96; }
+  78%  { transform: scaleY(0.1);  opacity: 0.4;  }
+  100% { transform: scaleY(0.1);  opacity: 0.4;  }
+}
+
+/* Bass: slow swell, sustains at peak before falling */
+@keyframes eq-bass {
+  0%   { transform: scaleY(0.18); opacity: 0.5;  }
+  22%  { transform: scaleY(0.88); opacity: 1;    }
+  62%  { transform: scaleY(0.84); opacity: 0.96; }
+  100% { transform: scaleY(0.18); opacity: 0.5;  }
 }
 
 /* Bubble pill transition animation — organic warp + glass sheen */
