@@ -5,6 +5,8 @@ import { useEffect, useState, useCallback, useRef, Suspense } from "react";
 import { supabase } from "@/lib/supabase";
 import { feedback } from "@/lib/feedback";
 import LoadingScreen from "../components/LoadingScreen";
+import { HIGH_BPM_CUTOFF } from "@/lib/constants";
+import { setNavDir } from "@/lib/nav";
 
 interface Exercise {
   id: string;
@@ -35,8 +37,6 @@ function formatTime(seconds: number) {
 function formatMs(ms: number) {
   return formatTime(Math.floor(ms / 1000));
 }
-
-const HIGH_BPM_CUTOFF = 120;
 
 const _pageLoad = Date.now();
 const ts = () => `+${Date.now() - _pageLoad}ms`;
@@ -734,6 +734,7 @@ function WorkoutInner() {
 
     console.log("[Session reset] handleEndWorkout called — all session state cleared");
 
+    setNavDir("back");
     router.push("/dashboard");
   };
 
@@ -787,7 +788,7 @@ function WorkoutInner() {
           ALTER TABLE exercises ADD COLUMN superset_with integer;
         </code>
         <button
-          onClick={() => router.push("/dashboard")}
+          onClick={() => { setNavDir("back"); router.push("/dashboard"); }}
           className="text-gray-400 hover:text-white underline text-sm mt-2"
         >
           Back to dashboard
@@ -805,7 +806,7 @@ function WorkoutInner() {
           <h1 className="text-4xl font-bold tracking-wide">Workout Complete!</h1>
           <p className="text-[#64748b]">{totalSets} sets crushed</p>
           <button
-            onClick={() => router.push("/dashboard")}
+            onClick={() => { setNavDir("back"); router.push("/dashboard"); }}
             className="bg-emerald-500 hover:bg-emerald-400 text-white font-bold px-8 py-4 rounded-xl text-lg mt-4 active:scale-95 transition-transform btn-animated"
           >
             Back to Dashboard

@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-
-const HIGH_BPM_CUTOFF = 120;
+import { HIGH_BPM_CUTOFF } from "@/lib/constants";
 const BATCH_SIZE = 8;
 
 export interface TrackBpm {

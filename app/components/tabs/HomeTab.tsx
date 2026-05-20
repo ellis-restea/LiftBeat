@@ -4,6 +4,7 @@ import { useEffect, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { feedback } from "@/lib/feedback";
+import { setNavDir } from "@/lib/nav";
 
 interface Workout { id: string; name: string; created_at: string; }
 interface Props { hasPlaylists: boolean; }
@@ -149,7 +150,7 @@ export default function HomeTab({ hasPlaylists }: Props) {
                 return (
                   <div
                     key={workout.id}
-                    onClick={() => router.push(`/workout?workout_id=${workout.id}`)}
+                    onClick={() => { setNavDir("forward"); router.push(`/workout?workout_id=${workout.id}`); }}
                     className="card-metallic flex items-center justify-between rounded-xl p-4 cursor-pointer transition hover:border-blue-500/30"
                   >
                     <div className="min-w-0 flex-1">
