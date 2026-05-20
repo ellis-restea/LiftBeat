@@ -212,7 +212,7 @@ function WorkoutSetupInner() {
           {!isOnboarding && (
             <button
               onClick={handleBack}
-              className="mr-3 -ml-1 self-start mt-1 text-[#64748b] hover:text-white active:scale-95 transition-all touch-manipulation"
+              className="mr-3 -ml-1 text-[#64748b] hover:text-white active:scale-95 transition-all touch-manipulation"
               aria-label="Back"
             >
               <svg viewBox="0 0 24 24" fill="currentColor" className="w-6 h-6">
@@ -220,10 +220,7 @@ function WorkoutSetupInner() {
               </svg>
             </button>
           )}
-          <div>
-            <h1 className="text-3xl font-bold tracking-wide">LiftBeat</h1>
-            <p className="text-[#64748b] mt-1">{isEditing ? "Edit workout" : "Build your workout"}</p>
-          </div>
+          <h1 className="text-3xl font-bold tracking-wide">{isEditing ? "Edit workout" : "Build your workout"}</h1>
         </div>
 
         <div className="grid gap-6">
