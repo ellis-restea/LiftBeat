@@ -42,8 +42,8 @@ function BpmBadge({ bpm }: { bpm: number | null }) {
   if (bpm === null)
     return <span className="text-xs font-medium text-gray-500 bg-gray-700/40 border border-gray-600/30 px-2.5 py-0.5 rounded-full whitespace-nowrap">—</span>;
   if (bpm >= HIGH_BPM_CUTOFF)
-    return <span className="text-xs font-medium text-red-400 bg-red-500/15 border border-red-500/25 px-2.5 py-0.5 rounded-full whitespace-nowrap">Intense</span>;
-  return <span className="text-xs font-medium text-blue-400 bg-blue-500/15 border border-blue-500/25 px-2.5 py-0.5 rounded-full whitespace-nowrap">Chill</span>;
+    return <span className="text-xs font-medium text-red-400 bg-red-500/15 border border-red-500/25 px-2.5 py-0.5 rounded-full whitespace-nowrap">High BPM</span>;
+  return <span className="text-xs font-medium text-blue-400 bg-blue-500/15 border border-blue-500/25 px-2.5 py-0.5 rounded-full whitespace-nowrap">Low BPM</span>;
 }
 
 const _pageLoad = Date.now();
@@ -531,7 +531,9 @@ function WorkoutInner() {
         const res = await fetch("/api/queue-tracks");
         if (!res.ok || cancelled) return;
         const body = await res.json();
-        const rawTracks: { id: string; name: string; artists: string[] }[] = body.tracks ?? [];
+        const currentlyPlayingId: string | null = body.currentlyPlayingId ?? currentTrack?.id ?? null;
+        const rawTracks: { id: string; name: string; artists: string[] }[] =
+          (body.tracks ?? []).filter((t: { id: string }) => t.id !== currentlyPlayingId);
 
         const merged: TrackBpm[] = rawTracks.map(t => ({
           ...t,
@@ -960,16 +962,6 @@ function WorkoutInner() {
         </svg>
       </button>
 
-      <button
-        onClick={() => { feedback("light"); setShowQueuePanel(true); }}
-        className={`fixed right-4 z-20 text-gray-400 hover:text-white active:scale-95 transition-all touch-manipulation ${bannerVisible ? "top-14" : "top-4"}`}
-        aria-label="View queue"
-      >
-        <svg viewBox="0 0 24 24" fill="currentColor" className="w-6 h-6">
-          <path d="M4 6h16v2H4zm0 5h16v2H4zm0 5h16v2H4z" />
-        </svg>
-      </button>
-
       {showExitDialog && (
         <div
           className="fixed inset-0 z-[60] flex items-center justify-center p-6"
@@ -1165,37 +1157,51 @@ function WorkoutInner() {
           </div>
 
           {/* Playback controls */}
-          <div className="flex items-center gap-8">
-            <button
-              onClick={prevTrack}
-              className="text-gray-400 active:text-white transition-colors touch-manipulation"
-            >
-              <svg viewBox="0 0 24 24" fill="currentColor" className="w-8 h-8">
-                <path d="M6 6h2v12H6zm3.5 6 8.5 6V6z" />
-              </svg>
-            </button>
-            <button
-              onClick={togglePlayPause}
-              className="text-white active:scale-95 transition-transform touch-manipulation"
-            >
-              {isPlaying ? (
-                <svg viewBox="0 0 24 24" fill="currentColor" className="w-14 h-14">
-                  <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" />
+          <div className="flex items-center w-full">
+            <div className="flex-1" />
+            <div className="flex items-center gap-8">
+              <button
+                onClick={prevTrack}
+                className="text-gray-400 active:text-white transition-colors touch-manipulation"
+              >
+                <svg viewBox="0 0 24 24" fill="currentColor" className="w-8 h-8">
+                  <path d="M6 6h2v12H6zm3.5 6 8.5 6V6z" />
                 </svg>
-              ) : (
-                <svg viewBox="0 0 24 24" fill="currentColor" className="w-14 h-14">
-                  <path d="M8 5v14l11-7z" />
+              </button>
+              <button
+                onClick={togglePlayPause}
+                className="text-white active:scale-95 transition-transform touch-manipulation"
+              >
+                {isPlaying ? (
+                  <svg viewBox="0 0 24 24" fill="currentColor" className="w-14 h-14">
+                    <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" />
+                  </svg>
+                ) : (
+                  <svg viewBox="0 0 24 24" fill="currentColor" className="w-14 h-14">
+                    <path d="M8 5v14l11-7z" />
+                  </svg>
+                )}
+              </button>
+              <button
+                onClick={skipTrack}
+                className="text-gray-400 active:text-white transition-colors touch-manipulation"
+              >
+                <svg viewBox="0 0 24 24" fill="currentColor" className="w-8 h-8">
+                  <path d="M6 18l8.5-6L6 6v12zm2-8.14L11.03 12 8 14.14V9.86zM16 6h2v12h-2z" />
                 </svg>
-              )}
-            </button>
-            <button
-              onClick={skipTrack}
-              className="text-gray-400 active:text-white transition-colors touch-manipulation"
-            >
-              <svg viewBox="0 0 24 24" fill="currentColor" className="w-8 h-8">
-                <path d="M6 18l8.5-6L6 6v12zm2-8.14L11.03 12 8 14.14V9.86zM16 6h2v12h-2z" />
-              </svg>
-            </button>
+              </button>
+            </div>
+            <div className="flex-1 flex justify-end">
+              <button
+                onClick={() => { feedback("light"); setShowQueuePanel(true); }}
+                className="text-gray-400 active:text-white transition-colors touch-manipulation"
+                aria-label="View queue"
+              >
+                <svg viewBox="0 0 24 24" fill="currentColor" className="w-6 h-6">
+                  <path d="M4 6h16v2H4zm0 5h16v2H4zm0 5h16v2H4z" />
+                </svg>
+              </button>
+            </div>
           </div>
         </div>
 
