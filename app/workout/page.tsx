@@ -883,12 +883,13 @@ function WorkoutInner() {
       </div>
     );
 
+  // RGB values match badgeColors (bg-gray-700 / amber-500 / red-500 / blue-500 / green-500)
   const stateColors: Record<WorkoutState, [number, number, number]> = {
-    idle:       [ 70,  70, 120],
-    warmup:     [ 40, 190,  70],
-    exercising: [240,  90,  20],
-    resting:    [ 40, 110, 240],
-    done:       [ 16, 185, 129],
+    idle:       [ 55,  65,  81],
+    warmup:     [245, 158,  11],
+    exercising: [239,  68,  68],
+    resting:    [ 59, 130, 246],
+    done:       [ 34, 197,  94],
   };
 
   if (workoutState === "done")

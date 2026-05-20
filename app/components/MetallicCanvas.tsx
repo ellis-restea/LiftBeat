@@ -77,21 +77,25 @@ export default function MetallicCanvas({ r, g, b }: Props) {
       ctx.fillStyle = base;
       ctx.fillRect(0, 0, w, h);
 
-      // 2. Glow 1 — large, drifts left-center
-      const g1x = w * 0.25 + Math.sin(t * 0.28) * w * 0.08;
+      // 2. Glow 1 — massive, bleeds across most of screen, drifts left-center
+      const g1x = w * 0.30 + Math.sin(t * 0.28) * w * 0.08;
       const g1y = h * 0.50 + Math.cos(t * 0.22) * h * 0.08;
-      const grd1 = ctx.createRadialGradient(g1x, g1y, 0, g1x, g1y, 300);
-      grd1.addColorStop(0, `rgba(${R},${G},${B},0.28)`);
-      grd1.addColorStop(1, "rgba(0,0,0,0)");
+      const r1 = h * 0.90;
+      const grd1 = ctx.createRadialGradient(g1x, g1y, 0, g1x, g1y, r1);
+      grd1.addColorStop(0,   `rgba(${R},${G},${B},0.22)`);
+      grd1.addColorStop(0.5, `rgba(${R},${G},${B},0.10)`);
+      grd1.addColorStop(1,   "rgba(0,0,0,0)");
       ctx.fillStyle = grd1;
       ctx.fillRect(0, 0, w, h);
 
-      // 3. Glow 2 — smaller, drifts right-center
-      const g2x = w * 0.72 + Math.cos(t * 0.19) * w * 0.07;
+      // 3. Glow 2 — large, offset right, bleeds into glow 1
+      const g2x = w * 0.70 + Math.cos(t * 0.19) * w * 0.07;
       const g2y = h * 0.45 + Math.sin(t * 0.31) * h * 0.07;
-      const grd2 = ctx.createRadialGradient(g2x, g2y, 0, g2x, g2y, 200);
-      grd2.addColorStop(0, `rgba(${R},${G},${B},0.20)`);
-      grd2.addColorStop(1, "rgba(0,0,0,0)");
+      const r2 = h * 0.75;
+      const grd2 = ctx.createRadialGradient(g2x, g2y, 0, g2x, g2y, r2);
+      grd2.addColorStop(0,   `rgba(${R},${G},${B},0.18)`);
+      grd2.addColorStop(0.5, `rgba(${R},${G},${B},0.08)`);
+      grd2.addColorStop(1,   "rgba(0,0,0,0)");
       ctx.fillStyle = grd2;
       ctx.fillRect(0, 0, w, h);
 
