@@ -8,6 +8,7 @@ import LoadingScreen from "../components/LoadingScreen";
 import MetallicCanvas from "../components/MetallicCanvas";
 import { HIGH_BPM_CUTOFF } from "@/lib/constants";
 import { setNavDir } from "@/lib/nav";
+import { loadDjMode, saveDjMode, type DjMode } from "@/lib/djMode";
 
 interface Exercise {
   id: string;
@@ -121,6 +122,10 @@ function WorkoutInner() {
   const precomputeSkipCountsRef = useRef<() => Promise<void>>(async () => {});
   const skipToTargetBpmRef = useRef<(state: WorkoutState) => Promise<boolean>>(async () => false);
   const queueTracksRef = useRef<TrackBpm[]>([]);
+  const [djMode, setDjMode] = useState<DjMode>("responsive");
+  const djModeRef = useRef<DjMode>("responsive");
+  // In Chill mode, state-change skips are deferred until the next natural track end.
+  const pendingBpmStateRef = useRef<WorkoutState | null>(null);
 
   const currentExercise = exercises[currentExerciseIndex];
   const totalSets = exercises.reduce((acc, ex) => acc + ex.sets, 0);
@@ -133,6 +138,14 @@ function WorkoutInner() {
 
   const displayProgress = isDragging ? dragProgress * 100 : songProgress;
   const displayPosition = isDragging ? Math.floor(dragProgress * songDuration) : songPosition;
+
+  useEffect(() => {
+    if (!session?.user?.name) return;
+    loadDjMode(session.user.name).then(mode => {
+      setDjMode(mode);
+      djModeRef.current = mode;
+    });
+  }, [session?.user?.name]);
 
   useEffect(() => {
     if (!workoutId) return;
@@ -456,7 +469,15 @@ function WorkoutInner() {
         `[Track] ♪ "${data?.item?.name}" by ${data?.item?.artists?.[0]?.name}`,
         `| bpm: ${trackBpm ?? "unknown"} | state: ${workoutStateRef.current} | pool: ${trackPoolRef.current.length} tracks`
       );
-      precomputeSkipCountsRef.current();
+
+      // Chill mode: fire the deferred BPM transition now that a new track has started
+      if (djModeRef.current === "chill" && pendingBpmStateRef.current && workoutStateRef.current !== "done") {
+        const pendingState = pendingBpmStateRef.current;
+        pendingBpmStateRef.current = null;
+        precomputeSkipCountsRef.current().then(() => skipToTargetBpmRef.current(pendingState));
+      } else {
+        precomputeSkipCountsRef.current();
+      }
     }
 
     setNoDevice(false);
@@ -518,7 +539,11 @@ function WorkoutInner() {
       if (remaining <= 0) {
         clearInterval(timerRef.current!);
         setWorkoutState("exercising");
-        skipToTargetBpmRef.current("exercising");
+        if (djModeRef.current === "responsive") {
+          skipToTargetBpmRef.current("exercising");
+        } else {
+          pendingBpmStateRef.current = "exercising";
+        }
       }
     }, 1000);
     return () => clearInterval(timerRef.current!);
@@ -625,6 +650,14 @@ function WorkoutInner() {
 
   const handleStartSet = () => { feedback("heavy"); setWorkoutState("exercising"); };
 
+  const triggerRestingBpm = () => {
+    if (djModeRef.current === "responsive") {
+      setTimeout(() => skipToTargetBpmRef.current("resting"), 500);
+    } else {
+      pendingBpmStateRef.current = "resting";
+    }
+  };
+
   const handleSetDone = () => {
     if (!currentExercise) return;
     feedback("heavy");
@@ -651,12 +684,12 @@ function WorkoutInner() {
           setCurrentExerciseIndex(pairedAIdx);
           setCurrentSet(currentSet + 1);
           setWorkoutState("resting");
-          setTimeout(() => skipToTargetBpmRef.current("resting"), 500);
+          triggerRestingBpm();
         } else if (currentExerciseIndex + 1 < exercises.length) {
           setCurrentExerciseIndex(currentExerciseIndex + 1);
           setCurrentSet(1);
           setWorkoutState("resting");
-          setTimeout(() => skipToTargetBpmRef.current("resting"), 500);
+          triggerRestingBpm();
         } else {
           setWorkoutState("done");
         }
@@ -667,12 +700,12 @@ function WorkoutInner() {
     if (currentSet < currentExercise.sets) {
       setCurrentSet(currentSet + 1);
       setWorkoutState("resting");
-      setTimeout(() => skipToTargetBpmRef.current("resting"), 500);
+      triggerRestingBpm();
     } else if (currentExerciseIndex < exercises.length - 1) {
       setCurrentExerciseIndex(currentExerciseIndex + 1);
       setCurrentSet(1);
       setWorkoutState("resting");
-      setTimeout(() => skipToTargetBpmRef.current("resting"), 500);
+      triggerRestingBpm();
     } else {
       setWorkoutState("done");
     }
@@ -861,6 +894,7 @@ function WorkoutInner() {
     rateLimitUntilRef.current = 0;
     precomputedHighSkipsRef.current = null;
     precomputedLowSkipsRef.current = null;
+    pendingBpmStateRef.current = null;
 
     console.log("[Session reset] handleEndWorkout called — all session state cleared");
 
@@ -992,6 +1026,47 @@ function WorkoutInner() {
           <path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z" />
         </svg>
       </button>
+
+      {/* DJ Mode micro-toggle — top right, changes take effect on next state transition */}
+      <div
+        className={`fixed right-4 z-20 flex items-center gap-1.5 touch-manipulation ${bannerVisible ? "top-14" : "top-4"}`}
+      >
+        <span
+          className="text-[10px] font-semibold uppercase tracking-wide"
+          style={{
+            color: djMode === "responsive" ? "#4ade80" : "#fb923c",
+            transition: "color 300ms ease",
+          }}
+        >
+          {djMode === "responsive" ? "Responsive" : "Chill"}
+        </span>
+        <button
+          onClick={() => {
+            const next: DjMode = djMode === "responsive" ? "chill" : "responsive";
+            setDjMode(next);
+            djModeRef.current = next;
+            if (session?.user?.name) saveDjMode(session.user.name, next).catch(() => {});
+            feedback("light");
+          }}
+          role="switch"
+          aria-checked={djMode === "responsive"}
+          className="relative rounded-full focus:outline-none active:scale-95 transition-transform"
+          style={{
+            width: 32,
+            height: 16,
+            backgroundColor: djMode === "responsive" ? "#22c55e" : "#f97316",
+            transition: "background-color 300ms ease",
+          }}
+        >
+          <div
+            className="absolute top-0.5 w-3 h-3 bg-white rounded-full shadow-sm"
+            style={{
+              transform: djMode === "responsive" ? "translateX(17px)" : "translateX(1px)",
+              transition: "transform 300ms ease",
+            }}
+          />
+        </button>
+      </div>
 
       {showExitDialog && (
         <div

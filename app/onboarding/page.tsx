@@ -55,7 +55,7 @@ export default function Onboarding() {
 
   const handleSpotify = () => {
     setNavDir("forward");
-    signIn("spotify", { callbackUrl: "/workout-setup?from=onboarding" });
+    signIn("spotify", { callbackUrl: "/dj-mode" });
   };
 
   return (

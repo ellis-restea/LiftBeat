@@ -2,6 +2,7 @@
 import { useSession, signOut } from "next-auth/react";
 import { useState, useEffect } from "react";
 import { feedback } from "@/lib/feedback";
+import { loadDjMode, saveDjMode, type DjMode } from "@/lib/djMode";
 
 function Toggle({
   label,
@@ -45,11 +46,17 @@ export default function SettingsTab() {
   const { data: session } = useSession();
   const [soundOn,  setSoundOn]  = useState(true);
   const [hapticOn, setHapticOn] = useState(true);
+  const [djMode, setDjMode] = useState<DjMode>("responsive");
 
   useEffect(() => {
     setSoundOn(localStorage.getItem("ls_sound")  !== "false");
     setHapticOn(localStorage.getItem("ls_haptic") !== "false");
   }, []);
+
+  useEffect(() => {
+    if (!session?.user?.name) return;
+    loadDjMode(session.user.name).then(setDjMode);
+  }, [session?.user?.name]);
 
   const handleSound = (v: boolean) => {
     setSoundOn(v);
@@ -59,6 +66,12 @@ export default function SettingsTab() {
   const handleHaptic = (v: boolean) => {
     setHapticOn(v);
     localStorage.setItem("ls_haptic", v ? "true" : "false");
+  };
+
+  const handleDjMode = (next: DjMode) => {
+    feedback("light");
+    setDjMode(next);
+    if (session?.user?.name) saveDjMode(session.user.name, next).catch(() => {});
   };
 
   return (
@@ -87,6 +100,57 @@ export default function SettingsTab() {
             value={hapticOn}
             onChange={handleHaptic}
           />
+        </div>
+
+        {/* DJ Mode */}
+        <div
+          className="card-metallic rounded-xl mb-4"
+          style={{
+            boxShadow: djMode === "responsive"
+              ? "0 0 32px 4px rgba(34,197,94,0.12), 0 4px 24px rgba(0,0,0,0.4)"
+              : "0 0 32px 4px rgba(249,115,22,0.12), 0 4px 24px rgba(0,0,0,0.4)",
+            transition: "box-shadow 500ms ease",
+          }}
+        >
+          <div className="flex justify-between items-center p-5">
+            <div>
+              <p className="font-semibold text-sm">DJ Mode</p>
+              <p className="text-[#64748b] text-xs mt-0.5">
+                {djMode === "responsive"
+                  ? "Songs switch the moment your state changes."
+                  : "Lets the song finish, then queues the right one."}
+              </p>
+            </div>
+            <div className="flex items-center gap-2 shrink-0 ml-4">
+              <span
+                className="text-xs font-semibold"
+                style={{
+                  color: djMode === "responsive" ? "#4ade80" : "#fb923c",
+                  transition: "color 300ms ease",
+                }}
+              >
+                {djMode === "responsive" ? "Responsive" : "Chill"}
+              </span>
+              <button
+                onClick={() => handleDjMode(djMode === "responsive" ? "chill" : "responsive")}
+                role="switch"
+                aria-checked={djMode === "responsive"}
+                className="relative w-12 h-6 rounded-full shrink-0 focus:outline-none"
+                style={{
+                  backgroundColor: djMode === "responsive" ? "#22c55e" : "#f97316",
+                  transition: "background-color 300ms ease",
+                }}
+              >
+                <div
+                  className="absolute top-0.5 w-5 h-5 bg-white rounded-full shadow-md"
+                  style={{
+                    transform: djMode === "responsive" ? "translateX(26px)" : "translateX(2px)",
+                    transition: "transform 300ms ease",
+                  }}
+                />
+              </button>
+            </div>
+          </div>
         </div>
 
         {/* Spotify */}
