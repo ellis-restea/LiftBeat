@@ -50,17 +50,7 @@ export default function Landing() {
             `radial-gradient(ellipse 110% 70% at var(--gx) var(--gy), #3b82f60c 0%, transparent 100%)`,
           ].join(', '),
         }} />
-        <div style={{ position: 'absolute', inset: 0, opacity: 0.07, mixBlendMode: 'overlay' }}>
-          <svg width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">
-            <defs>
-              <filter id="landing-grain">
-                <feTurbulence type="fractalNoise" baseFrequency="0.65 0.15" numOctaves="4" seed="5" stitchTiles="stitch"/>
-                <feColorMatrix type="saturate" values="0"/>
-              </filter>
-            </defs>
-            <rect width="100%" height="100%" filter="url(#landing-grain)" fill="white"/>
-          </svg>
-        </div>
+        <div className="metallic-sheen" style={{ position: 'absolute', inset: 0 }} />
       </div>
     <div className={`relative min-h-screen text-[#f1f5f9] flex flex-col ${enterClass}`} style={{ zIndex: 1 }}>
       <div className="flex-1 flex flex-col items-center justify-center text-center px-8 gap-6">

@@ -189,6 +189,38 @@
   animation: ambientDrift 14s ease-in-out infinite;
 }
 
+/* Dark anodized aluminum sheen — pure CSS, no SVG */
+.metallic-sheen {
+  background:
+    /* Broad directional sheen — brushed-metal body */
+    linear-gradient(
+      138deg,
+      transparent 10%,
+      rgba(148, 163, 184, 0.03) 30%,
+      rgba(203, 213, 225, 0.06) 48%,
+      rgba(148, 163, 184, 0.03) 62%,
+      transparent 82%
+    ),
+    /* Primary specular streak — sharp catch-light */
+    linear-gradient(
+      138deg,
+      transparent 41%,
+      rgba(226, 232, 240, 0.09) 44%,
+      rgba(255, 255, 255, 0.07) 45.5%,
+      rgba(226, 232, 240, 0.05) 47%,
+      transparent 50%
+    ),
+    /* Secondary streak — offset angle, softer */
+    linear-gradient(
+      124deg,
+      transparent 62%,
+      rgba(203, 213, 225, 0.05) 67%,
+      rgba(226, 232, 240, 0.04) 68.5%,
+      transparent 72%
+    );
+  pointer-events: none;
+}
+
 @keyframes shimmer {
   0%   { background-position: -400% 0; }
   100% { background-position:  400% 0; }
