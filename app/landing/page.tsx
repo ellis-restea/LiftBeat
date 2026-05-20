@@ -3,6 +3,7 @@ import { signIn } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { setNavDir, usePageEnter } from "@/lib/nav";
+import MetallicCanvas from "@/app/components/MetallicCanvas";
 
 export default function Landing() {
   const router = useRouter();
@@ -41,17 +42,7 @@ export default function Landing() {
 
   return (
     <>
-      <div className="fixed inset-0 bg-[#0a0a0f]" style={{ zIndex: -1 }} />
-      <div className="fixed inset-0 pointer-events-none" style={{ zIndex: 0 }}>
-        <div className="ambient-drift" style={{
-          position: 'absolute', inset: 0,
-          background: [
-            `radial-gradient(ellipse 60% 40% at var(--gx) var(--gy), #3b82f618 0%, transparent 100%)`,
-            `radial-gradient(ellipse 110% 70% at var(--gx) var(--gy), #3b82f60c 0%, transparent 100%)`,
-          ].join(', '),
-        }} />
-        <div className="metallic-sheen" style={{ position: 'absolute', inset: 0, '--sheen-tint': 'rgba(96, 165, 250, 0.07)' } as React.CSSProperties} />
-      </div>
+      <MetallicCanvas r={59} g={130} b={246} />
     <div className={`relative min-h-screen text-[#f1f5f9] flex flex-col ${enterClass}`} style={{ zIndex: 1 }}>
       <div className="flex-1 flex flex-col items-center justify-center text-center px-8 gap-6">
         <div className="mb-2">

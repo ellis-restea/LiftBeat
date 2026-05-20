@@ -5,6 +5,7 @@ import { useEffect, useState, useCallback, useRef, Suspense } from "react";
 import { supabase } from "@/lib/supabase";
 import { feedback } from "@/lib/feedback";
 import LoadingScreen from "../components/LoadingScreen";
+import MetallicCanvas from "../components/MetallicCanvas";
 import { HIGH_BPM_CUTOFF } from "@/lib/constants";
 import { setNavDir } from "@/lib/nav";
 
@@ -882,21 +883,18 @@ function WorkoutInner() {
       </div>
     );
 
+  const stateColors: Record<WorkoutState, [number, number, number]> = {
+    idle:       [ 70,  70, 120],
+    warmup:     [ 40, 190,  70],
+    exercising: [240,  90,  20],
+    resting:    [ 40, 110, 240],
+    done:       [ 16, 185, 129],
+  };
+
   if (workoutState === "done")
     return (
       <>
-        <div className="fixed inset-0 bg-[#0a0a0f]" style={{ zIndex: -1 }} />
-        <div className="fixed inset-0 pointer-events-none" style={{ zIndex: 0 }}>
-          <div className="glow-drift" style={{
-            position: 'absolute', inset: 0,
-            background: [
-              `radial-gradient(ellipse 55% 35% at var(--gx) var(--gy), #10b98188 0%, transparent 100%)`,
-              `radial-gradient(ellipse 90% 55% at var(--gx) var(--gy), #10b98144 0%, transparent 100%)`,
-              `radial-gradient(ellipse 120% 80% at var(--gx) var(--gy), #10b98118 0%, transparent 100%)`,
-            ].join(', '),
-          }} />
-          <div className="metallic-sheen" style={{ position: 'absolute', inset: 0, '--sheen-tint': 'rgba(16, 185, 129, 0.09)' } as React.CSSProperties} />
-        </div>
+        <MetallicCanvas r={16} g={185} b={129} />
         <div className="relative flex flex-col items-center justify-center min-h-screen text-white gap-6" style={{ zIndex: 1 }}>
           <h1 className="text-5xl">💪</h1>
           <h1 className="text-4xl font-bold tracking-wide">Workout Complete!</h1>
@@ -910,20 +908,6 @@ function WorkoutInner() {
         </div>
       </>
     );
-
-  const glowColors: Partial<Record<WorkoutState, string>> = {
-    warmup: '#f59e0b',
-    exercising: '#ef4444',
-    resting: '#3b82f6',
-    done: '#10b981',
-  };
-
-  const sheenTints: Partial<Record<WorkoutState, string>> = {
-    warmup:     'rgba(245, 158,  11, 0.09)',
-    exercising: 'rgba(239,  68,  68, 0.09)',
-    resting:    'rgba( 59, 130, 246, 0.09)',
-    done:       'rgba( 16, 185, 129, 0.09)',
-  };
 
   const accentColors: Record<WorkoutState, string> = {
     idle: "text-gray-400",
@@ -953,22 +937,7 @@ function WorkoutInner() {
 
   return (
     <>
-      <div className="fixed inset-0 bg-[#0a0a0f]" style={{ zIndex: -1 }} />
-      <div className="fixed inset-0 pointer-events-none" style={{ zIndex: 0 }}>
-        {(Object.entries(glowColors) as [WorkoutState, string][]).map(([state, color]) => (
-          <div key={state} className="glow-drift" style={{
-            position: 'absolute', inset: 0,
-            background: [
-              `radial-gradient(ellipse 55% 35% at var(--gx) var(--gy), ${color}88 0%, transparent 100%)`,
-              `radial-gradient(ellipse 90% 55% at var(--gx) var(--gy), ${color}44 0%, transparent 100%)`,
-              `radial-gradient(ellipse 120% 80% at var(--gx) var(--gy), ${color}18 0%, transparent 100%)`,
-            ].join(', '),
-            opacity: workoutState === state ? 1 : 0,
-            transition: 'opacity 700ms ease',
-          }} />
-        ))}
-        <div className="metallic-sheen" style={{ position: 'absolute', inset: 0, '--sheen-tint': sheenTints[workoutState] } as React.CSSProperties} />
-      </div>
+      <MetallicCanvas r={stateColors[workoutState][0]} g={stateColors[workoutState][1]} b={stateColors[workoutState][2]} />
 
       <button
         onClick={() => setShowExitDialog(true)}
