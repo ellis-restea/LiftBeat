@@ -1,6 +1,5 @@
 "use client";
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import { signIn } from "next-auth/react";
 import { setNavDir, usePageEnter } from "@/lib/nav";
 
@@ -33,16 +32,25 @@ const slides = [
 
 export default function Onboarding() {
   const [current, setCurrent] = useState(0);
-  const router = useRouter();
+  // null = no animation (initial load). Number = which slide is animating in.
+  const [animating, setAnimating] = useState<number | null>(null);
+  // Per-slide key; incrementing forces the text container to remount and restart CSS animations.
+  const [slideAnimKeys, setSlideAnimKeys] = useState<Record<number, number>>({});
   const enterClass = usePageEnter();
   const slide = slides[current];
 
+  const navigate = (next: number) => {
+    setCurrent(next);
+    setAnimating(next);
+    setSlideAnimKeys(k => ({ ...k, [next]: (k[next] ?? 0) + 1 }));
+  };
+
   const handleNext = () => {
-    if (current < slides.length - 1) setCurrent(current + 1);
+    if (current < slides.length - 1) navigate(current + 1);
   };
 
   const handleBack = () => {
-    if (current > 0) setCurrent(current - 1);
+    if (current > 0) navigate(current - 1);
   };
 
   const handleSpotify = () => {
@@ -77,7 +85,7 @@ export default function Onboarding() {
         </button>
       </div>
 
-      {/* Carousel */}
+      {/* Carousel — text sits at the bottom of this area, not centered */}
       <div className="flex-1 overflow-hidden">
         <div
           className="flex h-full"
@@ -91,19 +99,27 @@ export default function Onboarding() {
             <div
               key={i}
               style={{ width: `${100 / slides.length}%` }}
-              className="flex flex-col items-center justify-center px-8 text-center gap-6"
+              className="flex flex-col items-center justify-end pb-8 px-8 text-center gap-6"
             >
-              <div className="text-6xl mb-2">{s.visual}</div>
-              <div>
-                <p className="text-blue-500 text-xs font-bold uppercase tracking-widest mb-3">
+              <div className="text-6xl">{s.visual}</div>
+              {/* Rekeying this div remounts it, restarting CSS animations from scratch */}
+              <div
+                key={slideAnimKeys[i] ?? 0}
+                className="text-center"
+              >
+                <p className={`text-blue-500 text-xs font-bold uppercase tracking-widest mb-3${animating === i ? " slide-text-in" : ""}`}>
                   {s.tag}
                 </p>
-                <h2 className="text-3xl font-black tracking-wide mb-4 leading-tight">
+                <h2 className={`text-3xl font-black tracking-wide mb-4 leading-tight${animating === i ? " slide-text-in" : ""}`}>
                   {s.headline}
                 </h2>
-                <p className="text-[#64748b] text-base max-w-sm leading-relaxed">{s.body}</p>
+                <p className={`text-[#64748b] text-base text-center leading-relaxed${animating === i ? " slide-text-in-d1" : ""}`}>
+                  {s.body}
+                </p>
                 {s.source && (
-                  <p className="text-[#64748b] text-xs mt-3 italic font-light">{s.source}</p>
+                  <p className={`text-[#64748b] text-xs mt-3 italic font-light${animating === i ? " slide-text-in-d2" : ""}`}>
+                    {s.source}
+                  </p>
                 )}
               </div>
             </div>
@@ -112,7 +128,7 @@ export default function Onboarding() {
       </div>
 
       {/* Bottom */}
-      <div className="p-8 flex flex-col gap-4 max-w-sm mx-auto w-full shrink-0">
+      <div className="pt-4 px-8 pb-8 flex flex-col gap-4 max-w-sm mx-auto w-full shrink-0">
         {/* Dots */}
         <div className="flex justify-center gap-2 mb-2">
           {slides.map((_, i) => (
