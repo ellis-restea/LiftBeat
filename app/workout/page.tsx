@@ -505,13 +505,15 @@ function WorkoutInner() {
   }, [isPlaying, songDuration]);
 
   // Rest timer — counts down, then nudges HIGH BPM and switches to exercising.
+  // NOTE: auto BPM switching does not work when the tab is backgrounded or the device screen
+  // is locked — browsers throttle timers. Native wrapping is required to fix this properly.
   useEffect(() => {
     if (workoutState !== "resting" || !currentExercise) return;
     const duration = currentExercise.rest_seconds;
     setTimeLeft(duration);
-    let remaining = duration;
+    const startTime = Date.now();
     timerRef.current = setInterval(() => {
-      remaining -= 1;
+      const remaining = Math.max(0, duration - Math.floor((Date.now() - startTime) / 1000));
       setTimeLeft(remaining);
       if (remaining <= 0) {
         clearInterval(timerRef.current!);
@@ -749,6 +751,19 @@ function WorkoutInner() {
 
       await new Promise(r => setTimeout(r, 500));
 
+      // Quick poll to display new track info while BPM verification/fade-up are still in progress
+      const quickRes = await spotifyFetch("https://api.spotify.com/v1/me/player/currently-playing", {
+        headers: { Authorization: `Bearer ${session.accessToken}` },
+      });
+      if (quickRes.ok && quickRes.status !== 204) {
+        const quickData = await quickRes.json();
+        if (quickData?.item) {
+          currentTrackRef.current = quickData.item;
+          setCurrentTrack(quickData.item);
+          setIsPlaying(quickData.is_playing ?? false);
+        }
+      }
+
       const corrected = await verifyAndCorrectBpm(vol);
       if (!corrected) await fadeUp(vol);
     } finally {
@@ -798,6 +813,19 @@ function WorkoutInner() {
       ]);
 
       await new Promise(r => setTimeout(r, 500));
+
+      // Quick poll to display new track info while BPM verification/fade-up are still in progress
+      const quickRes = await spotifyFetch("https://api.spotify.com/v1/me/player/currently-playing", {
+        headers: { Authorization: `Bearer ${session.accessToken}` },
+      });
+      if (quickRes.ok && quickRes.status !== 204) {
+        const quickData = await quickRes.json();
+        if (quickData?.item) {
+          currentTrackRef.current = quickData.item;
+          setCurrentTrack(quickData.item);
+          setIsPlaying(quickData.is_playing ?? false);
+        }
+      }
 
       const corrected = await verifyAndCorrectBpm(vol);
       if (!corrected) await fadeUp(vol);
