@@ -33,6 +33,7 @@ app/
     AppShell.tsx        — SPA shell: manages tab state, persistent mounts, auth redirect, playlist check
     BottomNav.tsx       — Floating frosted-glass pill nav (320px, blur backdrop), sliding pill indicator
     LoadingScreen.tsx   — 4 animated equalizer bars (kick/snare/hihat/bass) + app name, no messages
+    MetallicCanvas.tsx  — Full-screen canvas background (dark base + drifting glows + grain + vignette)
     tabs/
       HomeTab.tsx       — Saved workouts list with shimmer skeleton rows
       MusicTab.tsx      — Playlist selector with shimmer skeleton rows, pre-loads saved IDs
@@ -132,9 +133,9 @@ Scrub bar: 5s poll updates songPosition/songProgress from Spotify. A separate 1s
 
 playedIdsRef: Set of track IDs played this workout. Tracks added when poll detects track change.
 deviceIdRef: lazily resolved — cached on Start Workout, also lazily fetched in playForState/prevTrack.
-BPM cutoff: 120. ≥120 = HIGH (exercising/warmup), <120 = LOW (resting).
+BPM cutoff: 130. ≥130 = HIGH (exercising/warmup), <130 = LOW (resting). Defined in lib/constants.ts as HIGH_BPM_CUTOFF.
 Workout states: idle → warmup → exercising → resting → done
-Glow overlays: amber (warmup), red (exercising), blue (resting), emerald (done)
+Canvas background (MetallicCanvas): state colors match badgeColors — idle=gray-700, warmup=amber-500, exercising=red-500, resting=blue-500, done=green-500.
 Rest timer counts down, auto-switches to exercising + calls playForState("exercising") when done.
 noDevice banner only shown in idle state — 204 from currently-playing during active workout is ignored.
 Spotify scopes: user-read-private user-read-playback-state user-modify-playback-state playlist-read-private playlist-read-collaborative streaming
@@ -191,10 +192,12 @@ Ad supported free tier (TBD)
 App Name: LiftBeat
 Design Language:
 
-Dark base: bg-[#0a0a0f] (very dark navy-black)
+Dark base: #111116 → #18181f → #0d0d11 (rendered by MetallicCanvas, not CSS background)
 Electric blue (#3b82f6) as primary accent
 card-metallic CSS utility: gradient surface + border + shadow
-State-based radial glow overlays on workout screen (amber/red/blue/emerald), 700ms opacity transition
+Canvas background (MetallicCanvas): workout screen and landing page use a canvas renderer —
+  dark base gradient + two large drifting radial glows (h*0.90 and h*0.75 radii) + static grain texture + edge vignette.
+  State color lerps at 0.02/frame so transitions are gradual (~3s to 95%). Landing uses fixed blue (59,130,246).
 Primary buttons: solid blue, white text, active:scale-95
 Secondary buttons: transparent with blue outline, active:scale-95
 Swish border animation: CSS @property --swish-angle conic-gradient sweeping on all CTA buttons
@@ -203,6 +206,7 @@ All tabs permanently mounted in AppShell (display:block/none) — no remounting,
 Shimmer skeleton states in HomeTab and MusicTab while data loads
 Tailwind v4 for styling
 Clean, minimal gym aesthetic
+Workout-setup header: no LiftBeat title — just back arrow + page title ("Edit workout" / "Build your workout") in text-lg font-semibold text-[#64748b]
 
 User Identity:
 
@@ -316,3 +320,30 @@ Each keyframe has fast attack (scaleY spike at 6–10%) and shaped decay (holds 
 Hi-hat has 3 rapid hits per cycle at unequal spacings (10%, 38%, 64%) for organic feel.
 Bass sustains at peak for 40% of cycle before falling — sub-note character.
 willChange: "transform, opacity" on each bar for GPU acceleration.
+
+Session Summary — May 20 2026:
+
+Canvas-based metallic background (MetallicCanvas component):
+New file: app/components/MetallicCanvas.tsx
+Replaces all CSS glow/sheen treatments on workout screen and landing page.
+Renders 4 layers per rAF: (1) dark linear gradient base (#111116 → #18181f → #0d0d11),
+(2) two large drifting radial glows using Math.sin/cos with non-harmonic frequencies,
+(3) static grain texture built once per resize on an offscreen canvas (sin(y*3.2) horizontal banding
+blended with Math.random(), alpha=12), (4) edge vignette radial gradient (transparent → rgba(0,0,0,0.35)).
+Glow radii scale with screen height: h*0.90 and h*0.75 — fills most of screen, both glows bleed together.
+Color lerp: 0.02 per frame, ~3s to 95% — smooth state transitions.
+Workout screen: stateColors matches badgeColors exactly (gray-700/amber-500/red-500/blue-500/green-500).
+Landing page: fixed blue (59, 130, 246), no state changes.
+All CSS @property/keyframe declarations for glow-drift, ambient-drift, metallic-sheen removed from globals.css.
+
+Workout-setup header cleanup:
+Removed "LiftBeat" h1 title and the subtitle below it.
+Page title ("Edit workout" / "Build your workout") moved inline next to back arrow.
+Styled as text-lg font-semibold text-[#64748b] — small and muted.
+
+Onboarding gap reduction:
+pb-8 → pb-2 on slide containers, pt-4 → pt-0 on bottom section.
+Total text-to-button gap: ~78px → ~38px (≈50% reduction).
+
+BPM cutoff correction in CLAUDE.md:
+Was incorrectly documented as 120. Actual value is 130 (set in lib/constants.ts in May 19 session).
