@@ -156,6 +156,39 @@
   to   { transform: translateY(0); }
 }
 
+@property --gx {
+  syntax: '<percentage>';
+  initial-value: 50%;
+  inherits: false;
+}
+
+@property --gy {
+  syntax: '<percentage>';
+  initial-value: -5%;
+  inherits: false;
+}
+
+@keyframes glowDrift {
+  0%, 100% { --gx: 45%; --gy: -8%; }
+  25%       { --gx: 58%; --gy:  3%; }
+  60%       { --gx: 48%; --gy: -2%; }
+  80%       { --gx: 38%; --gy:  7%; }
+}
+
+.glow-drift {
+  animation: glowDrift 10s ease-in-out infinite;
+}
+
+@keyframes ambientDrift {
+  0%, 100% { --gx: 50%; --gy: -10%; }
+  40%       { --gx: 62%; --gy:   5%; }
+  70%       { --gx: 38%; --gy:   0%; }
+}
+
+.ambient-drift {
+  animation: ambientDrift 14s ease-in-out infinite;
+}
+
 @keyframes shimmer {
   0%   { background-position: -400% 0; }
   100% { background-position:  400% 0; }

@@ -886,7 +886,27 @@ function WorkoutInner() {
     return (
       <>
         <div className="fixed inset-0 bg-[#0a0a0f]" style={{ zIndex: -1 }} />
-        <div className="fixed inset-0 pointer-events-none" style={{ zIndex: 0, background: 'radial-gradient(ellipse 55% 35% at 50% 0%, #10b98188 0%, transparent 100%), radial-gradient(ellipse 90% 55% at 50% 0%, #10b98144 0%, transparent 100%), radial-gradient(ellipse 120% 80% at 50% 0%, #10b98118 0%, transparent 100%)' }} />
+        <div className="fixed inset-0 pointer-events-none" style={{ zIndex: 0 }}>
+          <div className="glow-drift" style={{
+            position: 'absolute', inset: 0,
+            background: [
+              `radial-gradient(ellipse 55% 35% at var(--gx) var(--gy), #10b98188 0%, transparent 100%)`,
+              `radial-gradient(ellipse 90% 55% at var(--gx) var(--gy), #10b98144 0%, transparent 100%)`,
+              `radial-gradient(ellipse 120% 80% at var(--gx) var(--gy), #10b98118 0%, transparent 100%)`,
+            ].join(', '),
+          }} />
+          <div style={{ position: 'absolute', inset: 0, opacity: 0.10, mixBlendMode: 'overlay' }}>
+            <svg width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">
+              <defs>
+                <filter id="done-grain">
+                  <feTurbulence type="fractalNoise" baseFrequency="0.65 0.15" numOctaves="4" seed="5" stitchTiles="stitch"/>
+                  <feColorMatrix type="saturate" values="0"/>
+                </filter>
+              </defs>
+              <rect width="100%" height="100%" filter="url(#done-grain)" fill="white"/>
+            </svg>
+          </div>
+        </div>
         <div className="relative flex flex-col items-center justify-center min-h-screen text-white gap-6" style={{ zIndex: 1 }}>
           <h1 className="text-5xl">💪</h1>
           <h1 className="text-4xl font-bold tracking-wide">Workout Complete!</h1>
@@ -939,17 +959,28 @@ function WorkoutInner() {
       <div className="fixed inset-0 bg-[#0a0a0f]" style={{ zIndex: -1 }} />
       <div className="fixed inset-0 pointer-events-none" style={{ zIndex: 0 }}>
         {(Object.entries(glowColors) as [WorkoutState, string][]).map(([state, color]) => (
-          <div key={state} style={{
+          <div key={state} className="glow-drift" style={{
             position: 'absolute', inset: 0,
             background: [
-              `radial-gradient(ellipse 55% 35% at 50% 0%, ${color}88 0%, transparent 100%)`,
-              `radial-gradient(ellipse 90% 55% at 50% 0%, ${color}44 0%, transparent 100%)`,
-              `radial-gradient(ellipse 120% 80% at 50% 0%, ${color}18 0%, transparent 100%)`,
+              `radial-gradient(ellipse 55% 35% at var(--gx) var(--gy), ${color}88 0%, transparent 100%)`,
+              `radial-gradient(ellipse 90% 55% at var(--gx) var(--gy), ${color}44 0%, transparent 100%)`,
+              `radial-gradient(ellipse 120% 80% at var(--gx) var(--gy), ${color}18 0%, transparent 100%)`,
             ].join(', '),
             opacity: workoutState === state ? 1 : 0,
             transition: 'opacity 700ms ease',
           }} />
         ))}
+        <div style={{ position: 'absolute', inset: 0, opacity: 0.10, mixBlendMode: 'overlay' }}>
+          <svg width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+              <filter id="workout-grain">
+                <feTurbulence type="fractalNoise" baseFrequency="0.65 0.15" numOctaves="4" seed="5" stitchTiles="stitch"/>
+                <feColorMatrix type="saturate" values="0"/>
+              </filter>
+            </defs>
+            <rect width="100%" height="100%" filter="url(#workout-grain)" fill="white"/>
+          </svg>
+        </div>
       </div>
 
       <button
