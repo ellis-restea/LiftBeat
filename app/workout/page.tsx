@@ -1056,7 +1056,7 @@ function WorkoutInner() {
         </div>
       )}
 
-      <div className="relative h-[100dvh] overflow-hidden text-white flex flex-col items-center justify-between p-4" style={{ zIndex: 1 }}>
+      <div className="relative h-[100dvh] md:h-auto md:min-h-screen overflow-hidden md:overflow-visible text-white flex flex-col items-center justify-between p-4" style={{ zIndex: 1 }}>
         {premiumRequired && (
           <div className="fixed top-0 left-0 right-0 z-50 backdrop-blur-sm text-sm text-center py-2.5 px-4 bg-red-900/90 text-red-200">
             LiftBeat requires Spotify Premium
@@ -1064,7 +1064,7 @@ function WorkoutInner() {
         )}
 
         {/* Top */}
-        <div className={`text-center w-full ${premiumRequired ? "mt-8" : "mt-1"}`}>
+        <div className={`text-center w-full shrink-0 ${premiumRequired ? "mt-8" : "mt-1"}`}>
           <p className="text-gray-400 text-xs uppercase tracking-widest mb-2">
             Exercise {currentExerciseIndex + 1} of {exercises.length}
           </p>
@@ -1080,7 +1080,7 @@ function WorkoutInner() {
         </div>
 
         {/* Middle */}
-        <div className="flex flex-col items-center gap-3 w-full max-w-sm">
+        <div className="flex-1 min-h-0 overflow-hidden md:flex-none md:overflow-visible flex flex-col items-center gap-3 w-full max-w-sm">
           <span
             className={`${badgeColors[workoutState]} text-white text-xs font-bold px-4 py-1 rounded-full uppercase tracking-widest`}
           >
@@ -1089,7 +1089,7 @@ function WorkoutInner() {
 
           <p
             className={`text-5xl font-bold ${accentColors.resting} transition-opacity duration-300`}
-            style={{ opacity: workoutState === "resting" ? 1 : 0, pointerEvents: "none" }}
+            style={{ opacity: workoutState === "resting" ? 1 : 0, maxHeight: workoutState === "resting" ? '4rem' : '0', overflow: 'hidden', transition: 'opacity 300ms, max-height 300ms ease', pointerEvents: "none" }}
           >
             {formatTime(timeLeft)}
           </p>
@@ -1098,10 +1098,10 @@ function WorkoutInner() {
             {currentTrack?.album?.images?.[0] ? (
               <img
                 src={currentTrack.album.images[0].url}
-                className={`w-40 h-40 rounded-2xl shadow-2xl transition-opacity duration-300 ${isTransitioning ? "opacity-30" : "opacity-100"}`}
+                className={`w-32 h-32 md:w-40 md:h-40 rounded-2xl shadow-2xl transition-opacity duration-300 ${isTransitioning ? "opacity-30" : "opacity-100"}`}
               />
             ) : (
-              <div className="w-40 h-40 rounded-2xl bg-gray-800 flex items-center justify-center text-5xl">
+              <div className="w-32 h-32 md:w-40 md:h-40 rounded-2xl bg-gray-800 flex items-center justify-center text-5xl">
                 ♪
               </div>
             )}
@@ -1194,7 +1194,7 @@ function WorkoutInner() {
         </div>
 
         {/* Bottom */}
-        <div className="w-full max-w-sm mb-2 flex flex-col gap-3">
+        <div className="w-full max-w-sm mb-2 flex flex-col gap-3 shrink-0">
           {workoutState === "idle" && (
             <div className="grid w-full">
               <a
