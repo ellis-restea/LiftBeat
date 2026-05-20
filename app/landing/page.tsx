@@ -50,7 +50,7 @@ export default function Landing() {
             `radial-gradient(ellipse 110% 70% at var(--gx) var(--gy), #3b82f60c 0%, transparent 100%)`,
           ].join(', '),
         }} />
-        <div className="metallic-sheen" style={{ position: 'absolute', inset: 0 }} />
+        <div className="metallic-sheen" style={{ position: 'absolute', inset: 0, '--sheen-tint': 'rgba(96, 165, 250, 0.07)' } as React.CSSProperties} />
       </div>
     <div className={`relative min-h-screen text-[#f1f5f9] flex flex-col ${enterClass}`} style={{ zIndex: 1 }}>
       <div className="flex-1 flex flex-col items-center justify-center text-center px-8 gap-6">

@@ -895,7 +895,7 @@ function WorkoutInner() {
               `radial-gradient(ellipse 120% 80% at var(--gx) var(--gy), #10b98118 0%, transparent 100%)`,
             ].join(', '),
           }} />
-          <div className="metallic-sheen" style={{ position: 'absolute', inset: 0 }} />
+          <div className="metallic-sheen" style={{ position: 'absolute', inset: 0, '--sheen-tint': 'rgba(16, 185, 129, 0.09)' } as React.CSSProperties} />
         </div>
         <div className="relative flex flex-col items-center justify-center min-h-screen text-white gap-6" style={{ zIndex: 1 }}>
           <h1 className="text-5xl">💪</h1>
@@ -916,6 +916,13 @@ function WorkoutInner() {
     exercising: '#ef4444',
     resting: '#3b82f6',
     done: '#10b981',
+  };
+
+  const sheenTints: Partial<Record<WorkoutState, string>> = {
+    warmup:     'rgba(245, 158,  11, 0.09)',
+    exercising: 'rgba(239,  68,  68, 0.09)',
+    resting:    'rgba( 59, 130, 246, 0.09)',
+    done:       'rgba( 16, 185, 129, 0.09)',
   };
 
   const accentColors: Record<WorkoutState, string> = {
@@ -960,7 +967,7 @@ function WorkoutInner() {
             transition: 'opacity 700ms ease',
           }} />
         ))}
-        <div className="metallic-sheen" style={{ position: 'absolute', inset: 0 }} />
+        <div className="metallic-sheen" style={{ position: 'absolute', inset: 0, '--sheen-tint': sheenTints[workoutState] } as React.CSSProperties} />
       </div>
 
       <button

@@ -189,34 +189,53 @@
   animation: ambientDrift 14s ease-in-out infinite;
 }
 
-/* Dark anodized aluminum sheen — pure CSS, no SVG */
+/* Streak position along gradient axis — animated by sheenDrift */
+@property --sp {
+  syntax: '<percentage>';
+  initial-value: -20%;
+  inherits: false;
+}
+
+/* Specular highlight tint — overridden inline per screen/state */
+@property --sheen-tint {
+  syntax: '<color>';
+  initial-value: rgba(203, 213, 225, 0.08);
+  inherits: false;
+}
+
+/* Streak sweeps fully off-screen to off-screen — jump at wrap is invisible */
+@keyframes sheenDrift {
+  0%   { --sp: -30%; }
+  100% { --sp:  130%; }
+}
+
+/* Dark anodized aluminum sheen — pure CSS, animated */
 .metallic-sheen {
+  animation: sheenDrift 38s linear infinite;
+  transition: --sheen-tint 700ms ease;
   background:
-    /* Broad directional sheen — brushed-metal body */
+    /* Broad directional sheen — static body, gives surface depth */
     linear-gradient(
       138deg,
       transparent 10%,
-      rgba(148, 163, 184, 0.03) 30%,
-      rgba(203, 213, 225, 0.06) 48%,
-      rgba(148, 163, 184, 0.03) 62%,
-      transparent 82%
+      rgba(148, 163, 184, 0.025) 30%,
+      rgba(203, 213, 225, 0.05)  48%,
+      rgba(148, 163, 184, 0.02)  65%,
+      transparent 85%
     ),
-    /* Primary specular streak — sharp catch-light */
+    /* Primary specular streak — tinted by --sheen-tint, drifts with --sp */
     linear-gradient(
       138deg,
-      transparent 41%,
-      rgba(226, 232, 240, 0.09) 44%,
-      rgba(255, 255, 255, 0.07) 45.5%,
-      rgba(226, 232, 240, 0.05) 47%,
-      transparent 50%
+      transparent              calc(var(--sp) - 7%),
+      var(--sheen-tint)        var(--sp),
+      transparent              calc(var(--sp) + 7%)
     ),
-    /* Secondary streak — offset angle, softer */
+    /* Secondary softer streak — neutral silver, offset phase */
     linear-gradient(
       124deg,
-      transparent 62%,
-      rgba(203, 213, 225, 0.05) 67%,
-      rgba(226, 232, 240, 0.04) 68.5%,
-      transparent 72%
+      transparent              calc(var(--sp) + 8%),
+      rgba(203, 213, 225, 0.035) calc(var(--sp) + 13%),
+      transparent              calc(var(--sp) + 18%)
     );
   pointer-events: none;
 }
