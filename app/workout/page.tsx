@@ -38,6 +38,14 @@ function formatMs(ms: number) {
   return formatTime(Math.floor(ms / 1000));
 }
 
+function BpmBadge({ bpm }: { bpm: number | null }) {
+  if (bpm === null)
+    return <span className="text-xs font-medium text-gray-500 bg-gray-700/40 border border-gray-600/30 px-2.5 py-0.5 rounded-full whitespace-nowrap">—</span>;
+  if (bpm >= HIGH_BPM_CUTOFF)
+    return <span className="text-xs font-medium text-red-400 bg-red-500/15 border border-red-500/25 px-2.5 py-0.5 rounded-full whitespace-nowrap">Intense</span>;
+  return <span className="text-xs font-medium text-blue-400 bg-blue-500/15 border border-blue-500/25 px-2.5 py-0.5 rounded-full whitespace-nowrap">Chill</span>;
+}
+
 const _pageLoad = Date.now();
 const ts = () => `+${Date.now() - _pageLoad}ms`;
 
@@ -73,6 +81,9 @@ function WorkoutInner() {
   const [showExitDialog, setShowExitDialog] = useState(false);
   const [restingDots, setRestingDots] = useState(0);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [showQueuePanel, setShowQueuePanel] = useState(false);
+  const [queueTracks, setQueueTracks] = useState<TrackBpm[]>([]);
+  const [queueLoaded, setQueueLoaded] = useState(false);
 
   useEffect(() => {
     if (!toastMessage) return;
@@ -107,6 +118,7 @@ function WorkoutInner() {
   const precomputedLowSkipsRef = useRef<number | null>(null);
   const precomputeSkipCountsRef = useRef<() => Promise<void>>(async () => {});
   const skipToTargetBpmRef = useRef<(state: WorkoutState) => Promise<boolean>>(async () => false);
+  const queueTracksRef = useRef<TrackBpm[]>([]);
 
   const currentExercise = exercises[currentExerciseIndex];
   const totalSets = exercises.reduce((acc, ex) => acc + ex.sets, 0);
@@ -500,6 +512,78 @@ function WorkoutInner() {
     return () => clearInterval(id);
   }, [workoutState]);
 
+  // Keep queueTracksRef in sync so the polling closure always sees the latest value.
+  useEffect(() => { queueTracksRef.current = queueTracks; }, [queueTracks]);
+
+  // Fetch queue every 5s while the panel is open; stop when closed.
+  useEffect(() => {
+    if (!showQueuePanel) {
+      setQueueTracks([]);
+      setQueueLoaded(false);
+      return;
+    }
+    if (!session?.accessToken) return;
+
+    let cancelled = false;
+
+    const fetchQueue = async () => {
+      try {
+        const res = await fetch("/api/queue-tracks");
+        if (!res.ok || cancelled) return;
+        const body = await res.json();
+        const rawTracks: { id: string; name: string; artists: string[] }[] = body.tracks ?? [];
+
+        const merged: TrackBpm[] = rawTracks.map(t => ({
+          ...t,
+          bpm: trackPoolRef.current.find(p => p.id === t.id)?.bpm ?? null,
+        }));
+
+        // Only re-render if IDs or resolved BPMs changed.
+        const newSig = merged.map(t => `${t.id}:${t.bpm}`).join("|");
+        const curSig = queueTracksRef.current.map(t => `${t.id}:${t.bpm}`).join("|");
+        if (newSig !== curSig && !cancelled) setQueueTracks(merged);
+        if (!cancelled) setQueueLoaded(true);
+
+        // Background BPM enrichment for tracks not yet in the pool.
+        const unknown = rawTracks.filter(t =>
+          trackPoolRef.current.find(p => p.id === t.id)?.bpm == null
+        );
+        if (unknown.length > 0 && !cancelled) {
+          fetch("/api/playlist-bpm", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ tracks: unknown }),
+          })
+            .then(r => r.ok ? r.json() : null)
+            .then(result => {
+              if (!result || cancelled) return;
+              const enriched: TrackBpm[] = [
+                ...(result.high ?? []),
+                ...(result.low ?? []),
+                ...(result.unknown ?? []),
+              ];
+              const existingIds = new Set(trackPoolRef.current.map(t => t.id));
+              const added = enriched.filter(t => !existingIds.has(t.id));
+              if (added.length > 0) {
+                trackPoolRef.current = [...trackPoolRef.current, ...added];
+                if (!cancelled) {
+                  setQueueTracks(prev => prev.map(t => ({
+                    ...t,
+                    bpm: trackPoolRef.current.find(p => p.id === t.id)?.bpm ?? t.bpm,
+                  })));
+                }
+              }
+            })
+            .catch(() => {});
+        }
+      } catch { /* non-fatal */ }
+    };
+
+    fetchQueue();
+    const id = setInterval(fetchQueue, 5000);
+    return () => { cancelled = true; clearInterval(id); };
+  }, [showQueuePanel, session?.accessToken]);
+
   const handleStart = async () => {
     if (!session?.accessToken) return;
     feedback("heavy");
@@ -876,6 +960,16 @@ function WorkoutInner() {
         </svg>
       </button>
 
+      <button
+        onClick={() => { feedback("light"); setShowQueuePanel(true); }}
+        className={`fixed right-4 z-20 text-gray-400 hover:text-white active:scale-95 transition-all touch-manipulation ${bannerVisible ? "top-14" : "top-4"}`}
+        aria-label="View queue"
+      >
+        <svg viewBox="0 0 24 24" fill="currentColor" className="w-6 h-6">
+          <path d="M4 6h16v2H4zm0 5h16v2H4zm0 5h16v2H4z" />
+        </svg>
+      </button>
+
       {showExitDialog && (
         <div
           className="fixed inset-0 z-[60] flex items-center justify-center p-6"
@@ -902,6 +996,81 @@ function WorkoutInner() {
               >
                 End Workout
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showQueuePanel && (
+        <div
+          className="fixed inset-0 z-[60] flex items-end"
+          style={{ backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', background: 'rgba(0,0,0,0.65)' }}
+          onClick={() => setShowQueuePanel(false)}
+        >
+          <div
+            className="w-full bg-[#0f1117] border-t border-white/10 rounded-t-3xl max-h-[80vh] flex flex-col"
+            style={{ animation: 'slideUpPanel 280ms cubic-bezier(0.32, 0.72, 0, 1) forwards' }}
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Drag handle */}
+            <div className="flex justify-center pt-3 pb-1 shrink-0">
+              <div className="w-10 h-1 rounded-full bg-white/20" />
+            </div>
+
+            {/* Header */}
+            <div className="flex justify-between items-start px-6 py-3 shrink-0">
+              <div>
+                <h3 className="text-white font-bold text-lg leading-tight">Up Next</h3>
+                <p className="text-[#64748b] text-xs mt-0.5">up to 20 songs</p>
+              </div>
+              <button
+                onClick={() => setShowQueuePanel(false)}
+                className="text-gray-400 hover:text-white transition-colors p-1 -mr-1"
+                aria-label="Close"
+              >
+                <svg viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
+                  <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
+                </svg>
+              </button>
+            </div>
+
+            {/* Track list */}
+            <div className="overflow-y-auto flex-1 px-6 pb-8">
+              {/* Now Playing row */}
+              {currentTrack && (
+                <div className="flex items-center gap-3 py-3 mb-1 bg-white/5 -mx-6 px-6">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[#94a3b8] text-[10px] font-bold uppercase tracking-widest mb-0.5">Now Playing</p>
+                    <p className="font-semibold text-sm text-white truncate">{currentTrack.name}</p>
+                    <p className="text-[#64748b] text-xs truncate">
+                      {currentTrack.artists?.map((a: { name: string }) => a.name).join(", ")}
+                    </p>
+                  </div>
+                  <BpmBadge bpm={trackPoolRef.current.find(p => p.id === currentTrack.id)?.bpm ?? null} />
+                </div>
+              )}
+
+              {/* Divider */}
+              {currentTrack && (queueLoaded || queueTracks.length > 0) && (
+                <div className="border-t border-white/5 my-2" />
+              )}
+
+              {/* Queue rows */}
+              {!queueLoaded ? (
+                <p className="text-[#64748b] text-sm text-center py-8">Loading queue…</p>
+              ) : queueTracks.length === 0 ? (
+                <p className="text-[#64748b] text-sm text-center py-8">Queue is empty</p>
+              ) : (
+                queueTracks.map((track, i) => (
+                  <div key={`${track.id}-${i}`} className="flex items-center gap-3 py-3 border-b border-white/5 last:border-0">
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium text-sm text-white truncate">{track.name}</p>
+                      <p className="text-[#64748b] text-xs truncate">{track.artists.join(", ")}</p>
+                    </div>
+                    <BpmBadge bpm={track.bpm} />
+                  </div>
+                ))
+              )}
             </div>
           </div>
         </div>
