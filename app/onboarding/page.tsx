@@ -105,7 +105,7 @@ export default function Onboarding() {
               {/* Rekeying this div remounts it, restarting CSS animations from scratch */}
               <div
                 key={slideAnimKeys[i] ?? 0}
-                className="text-center"
+                className="text-center max-w-sm mx-auto"
               >
                 <p className={`text-blue-500 text-xs font-bold uppercase tracking-widest mb-3${animating === i ? " slide-text-in" : ""}`}>
                   {s.tag}
