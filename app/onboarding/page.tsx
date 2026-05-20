@@ -88,7 +88,7 @@ export default function Onboarding() {
             <div
               key={i}
               style={{ width: `${100 / slides.length}%` }}
-              className="flex flex-col items-center justify-end pb-4 px-8 text-center gap-6"
+              className="flex flex-col items-center justify-end pb-2 px-8 text-center gap-6"
             >
               <div className="text-6xl">{s.visual}</div>
               {/* Rekeying this div remounts it, restarting CSS animations from scratch */}
@@ -117,7 +117,7 @@ export default function Onboarding() {
       </div>
 
       {/* Bottom */}
-      <div className="pt-2 px-8 pb-8 flex flex-col gap-4 max-w-sm mx-auto w-full shrink-0">
+      <div className="pt-0 px-8 pb-8 flex flex-col gap-4 max-w-sm mx-auto w-full shrink-0">
         {/* Dots */}
         <div className="flex justify-center gap-2 mb-2">
           {slides.map((_, i) => (
