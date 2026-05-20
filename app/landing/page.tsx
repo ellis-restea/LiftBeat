@@ -69,7 +69,6 @@ export default function Landing() {
         <div className="flex flex-col gap-3 w-full max-w-sm mt-2">
           <button
             onClick={() => {
-              setNavDir("forward");
               router.push("/onboarding");
             }}
             className="w-full bg-blue-500 hover:bg-blue-400 text-white font-bold py-4 rounded-xl text-lg transition active:scale-95 btn-animated"

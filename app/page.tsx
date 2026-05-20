@@ -3,7 +3,6 @@ import { useSession } from "next-auth/react";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import LoadingScreen from "./components/LoadingScreen";
-import { setNavDir } from "@/lib/nav";
 
 export default function Home() {
   const { status } = useSession();
@@ -17,7 +16,6 @@ export default function Home() {
 
   useEffect(() => {
     if (!minTimeElapsed || status === "loading") return;
-    setNavDir("forward");
     router.replace(status === "authenticated" ? "/dashboard" : "/landing");
   }, [minTimeElapsed, status]);
 
