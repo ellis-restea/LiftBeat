@@ -109,6 +109,7 @@ function WorkoutInner() {
   // Active Spotify device ID
   const deviceIdRef = useRef<string | null>(null);
   const originalVolumeRef = useRef<number>(50);
+  const captureVolumeRef = useRef<() => Promise<number>>(async () => originalVolumeRef.current);
   const isTransitioningRef = useRef(false);
   const currentTrackRef = useRef<any>(null);
   const withMuteTransitionRef = useRef<(fn: () => Promise<void>) => Promise<void>>(async (fn) => fn());
@@ -180,26 +181,37 @@ function WorkoutInner() {
     return res;
   }, [updateSession]);
 
+  // Reads device.volume_percent and stores it in originalVolumeRef before any mute.
+  // Falls back to the last stored value (default 50) if the fetch fails or returns 0.
+  const captureVolume = useCallback(async (): Promise<number> => {
+    try {
+      const res = await fetch("https://api.spotify.com/v1/me/player", {
+        headers: { Authorization: `Bearer ${session?.accessToken ?? ""}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const v = data?.device?.volume_percent;
+        if (typeof v === "number" && v > 0) {
+          originalVolumeRef.current = v;
+          return v;
+        }
+      }
+    } catch { /* non-fatal */ }
+    return originalVolumeRef.current;
+  }, [session]);
+  useEffect(() => { captureVolumeRef.current = captureVolume; }, [captureVolume]);
+
   // Mute → run play command → wait for track start → fade volume back up.
   // Guarantees volume is always restored even if the transition errors.
   const withMuteTransition = useCallback(async (playFn: () => Promise<void>) => {
     if (!session?.accessToken) { await playFn(); return; }
 
-    let vol = originalVolumeRef.current;
+    const vol = await captureVolumeRef.current();
     let volumeRestored = false;
     setIsTransitioning(true);
     isTransitioningRef.current = true;
 
     try {
-      const pRes = await fetch("https://api.spotify.com/v1/me/player", {
-        headers: { Authorization: `Bearer ${session.accessToken}` },
-      });
-      if (pRes.ok) {
-        const pd = await pRes.json();
-        const v = pd?.device?.volume_percent;
-        if (typeof v === "number" && v > 0) { vol = v; originalVolumeRef.current = v; }
-      }
-
       await spotifyFetch(`https://api.spotify.com/v1/me/player/volume?volume_percent=0`, {
         method: "PUT",
         headers: { Authorization: `Bearer ${session.accessToken}` },
@@ -362,6 +374,9 @@ function WorkoutInner() {
       isTransitioningRef.current = true;
 
       try {
+        // Capture volume before muting so we can restore to the correct level later
+        await captureVolumeRef.current();
+
         // Mute FIRST — before any BPM analysis or track identification
         await spotifyFetch(`https://api.spotify.com/v1/me/player/volume?volume_percent=0`, {
           method: "PUT",
@@ -715,7 +730,7 @@ function WorkoutInner() {
 
   const skipTrack = async () => {
     if (!session?.accessToken) return;
-    const vol = originalVolumeRef.current;
+    const vol = await captureVolumeRef.current();
     setIsTransitioning(true);
     isTransitioningRef.current = true;
     lastCommandRef.current = Date.now() - 1200;
@@ -764,7 +779,7 @@ function WorkoutInner() {
     if (!deviceIdRef.current) return;
 
     const prevUri = history.pop()!;
-    const vol = originalVolumeRef.current;
+    const vol = await captureVolumeRef.current();
     setIsTransitioning(true);
     isTransitioningRef.current = true;
     lastCommandRef.current = Date.now();
