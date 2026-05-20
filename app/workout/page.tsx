@@ -1056,7 +1056,7 @@ function WorkoutInner() {
         </div>
       )}
 
-      <div className="relative h-[100dvh] md:h-auto md:min-h-screen overflow-hidden md:overflow-visible text-white flex flex-col items-center justify-between p-4" style={{ zIndex: 1 }}>
+      <div className="relative h-[100dvh] md:h-auto md:min-h-screen overflow-hidden md:overflow-visible text-white flex flex-col items-center justify-between p-4 md:p-8" style={{ zIndex: 1 }}>
         {premiumRequired && (
           <div className="fixed top-0 left-0 right-0 z-50 backdrop-blur-sm text-sm text-center py-2.5 px-4 bg-red-900/90 text-red-200">
             LiftBeat requires Spotify Premium
@@ -1080,7 +1080,7 @@ function WorkoutInner() {
         </div>
 
         {/* Middle */}
-        <div className="flex-1 min-h-0 overflow-hidden md:flex-none md:overflow-visible flex flex-col items-center gap-3 w-full max-w-sm">
+        <div className="flex-1 min-h-0 overflow-hidden md:flex-none md:overflow-visible flex flex-col items-center gap-4 md:gap-5 w-full max-w-sm">
           <span
             className={`${badgeColors[workoutState]} text-white text-xs font-bold px-4 py-1 rounded-full uppercase tracking-widest`}
           >
@@ -1088,20 +1088,20 @@ function WorkoutInner() {
           </span>
 
           <p
-            className={`text-5xl font-bold ${accentColors.resting} transition-opacity duration-300`}
-            style={{ opacity: workoutState === "resting" ? 1 : 0, maxHeight: workoutState === "resting" ? '4rem' : '0', overflow: 'hidden', transition: 'opacity 300ms, max-height 300ms ease', pointerEvents: "none" }}
+            className={`text-5xl md:text-7xl font-bold ${accentColors.resting} transition-opacity duration-300${workoutState !== "resting" ? " timer-collapsed" : ""}`}
+            style={{ opacity: workoutState === "resting" ? 1 : 0, pointerEvents: "none" }}
           >
             {formatTime(timeLeft)}
           </p>
 
-          <div className="relative">
+          <div className="relative flex-1 min-h-0 flex items-center justify-center md:flex-none">
             {currentTrack?.album?.images?.[0] ? (
               <img
                 src={currentTrack.album.images[0].url}
-                className={`w-32 h-32 md:w-40 md:h-40 rounded-2xl shadow-2xl transition-opacity duration-300 ${isTransitioning ? "opacity-30" : "opacity-100"}`}
+                className={`w-48 h-48 md:w-52 md:h-52 rounded-2xl shadow-2xl transition-opacity duration-300 ${isTransitioning ? "opacity-30" : "opacity-100"}`}
               />
             ) : (
-              <div className="w-32 h-32 md:w-40 md:h-40 rounded-2xl bg-gray-800 flex items-center justify-center text-5xl">
+              <div className="w-48 h-48 md:w-52 md:h-52 rounded-2xl bg-gray-800 flex items-center justify-center text-5xl">
                 ♪
               </div>
             )}
@@ -1115,7 +1115,7 @@ function WorkoutInner() {
           </div>
 
           <div className={`text-center transition-opacity duration-300 ${isTransitioning ? "opacity-30 animate-pulse" : ""}`}>
-            <p className="font-semibold text-base">{currentTrack?.name || "No track playing"}</p>
+            <p className="font-semibold text-base md:text-lg">{currentTrack?.name || "No track playing"}</p>
             <p className="text-gray-400 text-sm">{currentTrack?.artists?.[0]?.name}</p>
           </div>
 
@@ -1147,12 +1147,12 @@ function WorkoutInner() {
           {/* Playback controls */}
           <div className="flex items-center w-full">
             <div className="flex-1" />
-            <div className="flex items-center gap-8">
+            <div className="flex items-center gap-6 md:gap-8">
               <button
                 onClick={prevTrack}
                 className="text-gray-400 active:text-white transition-colors touch-manipulation"
               >
-                <svg viewBox="0 0 24 24" fill="currentColor" className="w-8 h-8">
+                <svg viewBox="0 0 24 24" fill="currentColor" className="w-6 h-6 md:w-8 md:h-8">
                   <path d="M6 6h2v12H6zm3.5 6 8.5 6V6z" />
                 </svg>
               </button>
@@ -1161,11 +1161,11 @@ function WorkoutInner() {
                 className="text-white active:scale-95 transition-transform touch-manipulation"
               >
                 {isPlaying ? (
-                  <svg viewBox="0 0 24 24" fill="currentColor" className="w-14 h-14">
+                  <svg viewBox="0 0 24 24" fill="currentColor" className="w-10 h-10 md:w-14 md:h-14">
                     <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" />
                   </svg>
                 ) : (
-                  <svg viewBox="0 0 24 24" fill="currentColor" className="w-14 h-14">
+                  <svg viewBox="0 0 24 24" fill="currentColor" className="w-10 h-10 md:w-14 md:h-14">
                     <path d="M8 5v14l11-7z" />
                   </svg>
                 )}
@@ -1174,7 +1174,7 @@ function WorkoutInner() {
                 onClick={skipTrack}
                 className="text-gray-400 active:text-white transition-colors touch-manipulation"
               >
-                <svg viewBox="0 0 24 24" fill="currentColor" className="w-8 h-8">
+                <svg viewBox="0 0 24 24" fill="currentColor" className="w-6 h-6 md:w-8 md:h-8">
                   <path d="M6 18l8.5-6L6 6v12zm2-8.14L11.03 12 8 14.14V9.86zM16 6h2v12h-2z" />
                 </svg>
               </button>
@@ -1194,7 +1194,7 @@ function WorkoutInner() {
         </div>
 
         {/* Bottom */}
-        <div className="w-full max-w-sm mb-2 flex flex-col gap-3 shrink-0">
+        <div className="w-full max-w-sm mb-2 md:mb-4 flex flex-col gap-3 md:gap-4 shrink-0">
           {workoutState === "idle" && (
             <div className="grid w-full">
               <a
@@ -1205,7 +1205,7 @@ function WorkoutInner() {
                   pointerEvents: spotifyPlaying === true ? 'none' : 'auto',
                   transition: 'opacity 400ms ease',
                 }}
-                className="w-full bg-[#1DB954] text-white font-bold py-4 rounded-2xl text-xl touch-manipulation active:scale-95 flex items-center justify-center gap-3 btn-spotify"
+                className="w-full bg-[#1DB954] text-white font-bold py-4 md:py-5 rounded-2xl text-xl touch-manipulation active:scale-95 flex items-center justify-center gap-3 btn-spotify"
               >
                 <svg viewBox="0 0 24 24" fill="currentColor" className="w-6 h-6 shrink-0">
                   <path d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z"/>
@@ -1221,7 +1221,7 @@ function WorkoutInner() {
                   pointerEvents: spotifyPlaying === true ? 'auto' : 'none',
                   transition: 'opacity 400ms ease',
                 }}
-                className="w-full bg-blue-500 hover:bg-blue-400 disabled:opacity-40 text-white font-bold py-4 rounded-2xl text-xl touch-manipulation active:scale-95 btn-animated"
+                className="w-full bg-blue-500 hover:bg-blue-400 disabled:opacity-40 text-white font-bold py-4 md:py-5 rounded-2xl text-xl touch-manipulation active:scale-95 btn-animated"
               >
                 Start Workout 🔥
               </button>
@@ -1230,7 +1230,7 @@ function WorkoutInner() {
           {workoutState === "warmup" && (
             <button
               onClick={handleStartSet}
-              className="w-full bg-blue-500 hover:bg-blue-400 text-white font-bold py-4 rounded-2xl text-xl touch-manipulation active:scale-95 transition-transform btn-animated"
+              className="w-full bg-blue-500 hover:bg-blue-400 text-white font-bold py-4 md:py-5 rounded-2xl text-xl touch-manipulation active:scale-95 transition-transform btn-animated"
             >
               Start Set 💪
             </button>
@@ -1238,7 +1238,7 @@ function WorkoutInner() {
           {workoutState === "exercising" && (
             <button
               onClick={handleSetDone}
-              className="w-full bg-blue-500 hover:bg-blue-400 text-white font-bold py-5 rounded-2xl text-xl touch-manipulation active:scale-95 transition-transform btn-animated"
+              className="w-full bg-blue-500 hover:bg-blue-400 text-white font-bold py-4 md:py-5 rounded-2xl text-xl touch-manipulation active:scale-95 transition-transform btn-animated"
             >
               Done with Set ✓
             </button>
@@ -1246,7 +1246,7 @@ function WorkoutInner() {
           {workoutState === "resting" && (
             <button
               disabled
-              className="w-full bg-gray-800 text-gray-400 font-bold py-4 rounded-2xl text-xl touch-manipulation cursor-not-allowed border border-white/5"
+              className="w-full bg-gray-800 text-gray-400 font-bold py-4 md:py-5 rounded-2xl text-xl touch-manipulation cursor-not-allowed border border-white/5"
             >
               {"Resting" + ".".repeat(restingDots)}
             </button>

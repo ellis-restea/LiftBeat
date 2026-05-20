@@ -4,6 +4,20 @@ html, body {
   background-color: #111116;
 }
 
+/* Collapses the rest timer on mobile so it takes no layout space when not resting.
+   On desktop (md+) the timer is always in flow at its natural height. */
+.timer-collapsed {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 300ms ease;
+}
+@media (min-width: 768px) {
+  .timer-collapsed {
+    max-height: none;
+    overflow: visible;
+  }
+}
+
 @property --swish-angle {
   syntax: '<angle>';
   initial-value: 0deg;
