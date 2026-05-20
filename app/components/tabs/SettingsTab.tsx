@@ -114,7 +114,7 @@ export default function SettingsTab() {
         >
           <div className="flex justify-between items-center p-5">
             <div>
-              <p className="font-semibold text-sm">DJ Mode</p>
+              <p className="font-semibold text-sm">DJ Type</p>
               <p className="text-[#64748b] text-xs mt-0.5">
                 {djMode === "responsive"
                   ? "Songs switch the moment your state changes."

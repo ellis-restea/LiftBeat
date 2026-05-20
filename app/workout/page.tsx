@@ -1057,9 +1057,9 @@ function WorkoutInner() {
         </svg>
       </button>
 
-      {/* DJ Mode micro-toggle — top right, changes take effect on next state transition */}
+      {/* DJ Type micro-toggle — top right, changes take effect on next state transition */}
       <div
-        className={`fixed right-4 z-20 flex items-center gap-1.5 touch-manipulation ${bannerVisible ? "top-14" : "top-4"}`}
+        className={`fixed right-4 z-20 flex flex-col items-center gap-1 touch-manipulation ${bannerVisible ? "top-14" : "top-4"}`}
       >
         <span
           className="text-[10px] font-semibold uppercase tracking-wide"

@@ -39,7 +39,7 @@ function DjModeInner() {
             {isResponsive ? "⚡" : "🌊"}
           </div>
           <h2 className="text-3xl font-black tracking-wide mb-10 leading-tight max-w-xs">
-            What kind of workout DJ do you want?
+            Choose Your DJ Type
           </h2>
         </div>
 
