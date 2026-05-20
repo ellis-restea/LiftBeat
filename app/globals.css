@@ -1,5 +1,9 @@
 @import "tailwindcss";
 
+body {
+  background-color: #111116;
+}
+
 @property --swish-angle {
   syntax: '<angle>';
   initial-value: 0deg;
