@@ -220,7 +220,7 @@ function WorkoutSetupInner() {
               </svg>
             </button>
           )}
-          <h1 className="text-3xl font-bold tracking-wide">{isEditing ? "Edit workout" : "Build your workout"}</h1>
+          <h1 className="text-lg font-semibold text-[#64748b]">{isEditing ? "Edit workout" : "Build your workout"}</h1>
         </div>
 
         <div className="grid gap-6">
