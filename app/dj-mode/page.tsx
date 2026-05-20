@@ -2,7 +2,7 @@
 import { useState, Suspense } from "react";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
-import { setNavDir, usePageEnter } from "@/lib/nav";
+import { setNavDir } from "@/lib/nav";
 import { saveDjMode, type DjMode } from "@/lib/djMode";
 
 export default function DjModePage() {
@@ -12,7 +12,6 @@ export default function DjModePage() {
 function DjModeInner() {
   const { data: session } = useSession();
   const router = useRouter();
-  const enterClass = usePageEnter();
   const [mode, setMode] = useState<DjMode>("responsive");
   const [saving, setSaving] = useState(false);
 
@@ -30,22 +29,23 @@ function DjModeInner() {
   };
 
   return (
-    <div className={`min-h-screen bg-[#0a0a0f] text-[#f1f5f9] flex flex-col overflow-hidden ${enterClass}`}>
+    <div className="min-h-screen bg-[#0a0a0f] text-[#f1f5f9] flex flex-col overflow-hidden">
       {/* Content — vertically centered */}
       <div className="flex-1 flex flex-col items-center justify-center px-8 text-center">
-        {/* Emoji */}
-        <div className="text-6xl mb-6" style={{ transition: "opacity 200ms" }}>
-          {isResponsive ? "⚡" : "🌊"}
+
+        {/* Emoji + Headline — fade in first */}
+        <div className="slide-text-in">
+          <div className="text-6xl mb-6">
+            {isResponsive ? "⚡" : "🌊"}
+          </div>
+          <h2 className="text-3xl font-black tracking-wide mb-10 leading-tight max-w-xs">
+            What kind of workout DJ do you want?
+          </h2>
         </div>
 
-        {/* Headline */}
-        <h2 className="text-3xl font-black tracking-wide mb-10 leading-tight max-w-xs">
-          What kind of workout DJ do you want?
-        </h2>
-
-        {/* Toggle container with soft glow */}
+        {/* Toggle container with soft glow — 150ms after headline */}
         <div
-          className="flex flex-col items-center gap-5 py-8 px-14 rounded-3xl"
+          className="slide-text-in-d1 flex flex-col items-center gap-5 py-8 px-14 rounded-3xl"
           style={{
             boxShadow: isResponsive
               ? "0 0 64px 16px rgba(34,197,94,0.18)"
@@ -87,9 +87,9 @@ function DjModeInner() {
           </button>
         </div>
 
-        {/* Description */}
+        {/* Description — 300ms after headline */}
         <p
-          className="text-[#64748b] text-base leading-relaxed mt-8 max-w-xs"
+          className="slide-text-in-d2 text-[#64748b] text-base leading-relaxed mt-8 max-w-xs"
           style={{ minHeight: 48 }}
         >
           {isResponsive

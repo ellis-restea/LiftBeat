@@ -470,11 +470,22 @@ function WorkoutInner() {
         `| bpm: ${trackBpm ?? "unknown"} | state: ${workoutStateRef.current} | pool: ${trackPoolRef.current.length} tracks`
       );
 
-      // Chill mode: fire the deferred BPM transition now that a new track has started
+      // Chill mode: fire the deferred BPM transition now that a new track has started naturally
       if (djModeRef.current === "chill" && pendingBpmStateRef.current && workoutStateRef.current !== "done") {
         const pendingState = pendingBpmStateRef.current;
         pendingBpmStateRef.current = null;
-        precomputeSkipCountsRef.current().then(() => skipToTargetBpmRef.current(pendingState));
+        const wantHigh = pendingState === "warmup" || pendingState === "exercising";
+        const requiredCat = wantHigh ? "HIGH" : "LOW";
+        const landedBpm = newId ? trackPoolRef.current.find(p => p.id === newId)?.bpm : null;
+        const landedCat = landedBpm == null ? "UNKNOWN" : landedBpm >= HIGH_BPM_CUTOFF ? "HIGH" : "LOW";
+        console.log(`[Chill/natural] Song ended. state=${workoutStateRef.current} requires ${requiredCat} | landed bpm=${landedBpm ?? "?"} (${landedCat})`);
+        if (landedBpm != null && landedCat === requiredCat) {
+          console.log(`[Chill/natural] ✓ Already correct BPM — no skip needed`);
+          precomputeSkipCountsRef.current();
+        } else {
+          console.log(`[Chill/natural] ✗ Wrong category — precomputing then skipping to ${requiredCat}`);
+          precomputeSkipCountsRef.current().then(() => skipToTargetBpmRef.current(pendingState));
+        }
       } else {
         precomputeSkipCountsRef.current();
       }
@@ -785,16 +796,35 @@ function WorkoutInner() {
       await new Promise(r => setTimeout(r, 500));
 
       // Quick poll to display new track info while BPM verification/fade-up are still in progress
+      let landedTrackId: string | null = null;
       const quickRes = await spotifyFetch("https://api.spotify.com/v1/me/player/currently-playing", {
         headers: { Authorization: `Bearer ${session.accessToken}` },
       });
       if (quickRes.ok && quickRes.status !== 204) {
         const quickData = await quickRes.json();
         if (quickData?.item) {
+          landedTrackId = quickData.item.id ?? null;
           currentTrackRef.current = quickData.item;
           setCurrentTrack(quickData.item);
           setIsPlaying(quickData.is_playing ?? false);
         }
+      }
+
+      // Chill mode: manual skip acts as the trigger — clear the deferred state now so
+      // fetchCurrentTrack won't fire it again. Log the decision before verifyAndCorrectBpm runs.
+      if (djModeRef.current === "chill") {
+        const ws = workoutStateRef.current;
+        const wantHigh = ws === "warmup" || ws === "exercising";
+        const requiredCat = wantHigh ? "HIGH" : "LOW";
+        const landedBpm = landedTrackId ? trackPoolRef.current.find(p => p.id === landedTrackId)?.bpm : null;
+        const landedCat = landedBpm == null ? "UNKNOWN" : landedBpm >= HIGH_BPM_CUTOFF ? "HIGH" : "LOW";
+        console.log(`[Chill/skip] state=${ws} requires ${requiredCat} | landed bpm=${landedBpm ?? "?"} (${landedCat})`);
+        if (landedBpm != null && landedCat === requiredCat) {
+          console.log(`[Chill/skip] ✓ Already correct BPM — clearing pending, no additional skip`);
+        } else {
+          console.log(`[Chill/skip] ✗ Wrong category — verifyAndCorrectBpm will correct`);
+        }
+        pendingBpmStateRef.current = null;
       }
 
       const corrected = await verifyAndCorrectBpm(vol);
