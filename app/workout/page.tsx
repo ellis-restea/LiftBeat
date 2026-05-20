@@ -1080,7 +1080,7 @@ function WorkoutInner() {
         </div>
 
         {/* Middle */}
-        <div className="flex-1 min-h-0 overflow-hidden md:flex-none md:overflow-visible flex flex-col items-center gap-4 md:gap-5 w-full max-w-sm">
+        <div className="flex-1 min-h-0 overflow-hidden md:flex-none md:overflow-visible flex flex-col items-center gap-4 md:gap-5 pt-4 md:pt-0 w-full max-w-sm">
           <span
             className={`${badgeColors[workoutState]} text-white text-xs font-bold px-4 py-1 rounded-full uppercase tracking-widest`}
           >
@@ -1123,18 +1123,18 @@ function WorkoutInner() {
           <div className="w-full select-none">
             <div
               ref={progressBarRef}
-              className="w-full bg-gray-700 rounded-full h-1.5 mb-2 cursor-pointer relative group"
+              className="w-full bg-gray-700 rounded-full h-1 md:h-1.5 mb-2 cursor-pointer relative group"
               onPointerDown={handleProgressPointerDown}
               onPointerMove={handleProgressPointerMove}
               onPointerUp={handleProgressPointerUp}
               onPointerCancel={handleProgressPointerUp}
             >
               <div
-                className="bg-white rounded-full h-1.5 pointer-events-none"
+                className="bg-white rounded-full h-1 md:h-1.5 pointer-events-none"
                 style={{ width: `${displayProgress}%` }}
               />
               <div
-                className={`absolute top-1/2 w-3.5 h-3.5 bg-white rounded-full shadow-md pointer-events-none transition-opacity ${isDragging ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
+                className={`absolute top-1/2 w-2.5 h-2.5 md:w-3.5 md:h-3.5 bg-white rounded-full shadow-md pointer-events-none transition-opacity ${isDragging ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
                 style={{ left: `${displayProgress}%`, transform: "translate(-50%, -50%)" }}
               />
             </div>
@@ -1194,7 +1194,7 @@ function WorkoutInner() {
         </div>
 
         {/* Bottom */}
-        <div className="w-full max-w-sm mb-2 md:mb-4 flex flex-col gap-3 md:gap-4 shrink-0">
+        <div className="w-full max-w-sm mb-2 md:mb-4 pt-2.5 md:pt-0 flex flex-col gap-3 md:gap-4 shrink-0">
           {workoutState === "idle" && (
             <div className="grid w-full">
               <a
@@ -1267,9 +1267,9 @@ function WorkoutInner() {
               <span>Workout Progress</span>
               <span>{workoutProgress}%</span>
             </div>
-            <div className="w-full bg-gray-700 rounded-full h-2">
+            <div className="w-full bg-gray-700 rounded-full h-1.5 md:h-2">
               <div
-                className="bg-blue-500 h-2 rounded-full transition-all"
+                className="bg-blue-500 h-1.5 md:h-2 rounded-full transition-all"
                 style={{ width: `${workoutProgress}%` }}
               />
             </div>
