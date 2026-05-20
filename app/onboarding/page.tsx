@@ -58,15 +58,10 @@ export default function Onboarding() {
     signIn("spotify", { callbackUrl: "/workout-setup?from=onboarding" });
   };
 
-  const handleSkip = () => {
-    setNavDir("forward");
-    signIn("spotify", { callbackUrl: "/workout-setup?from=onboarding" });
-  };
-
   return (
     <div className={`min-h-screen bg-[#0a0a0f] text-[#f1f5f9] flex flex-col overflow-hidden ${enterClass}`}>
       {/* Top bar */}
-      <div className="flex justify-between items-center p-6 shrink-0">
+      <div className="flex items-center p-6 shrink-0">
         {current > 0 ? (
           <button
             onClick={handleBack}
@@ -77,12 +72,6 @@ export default function Onboarding() {
         ) : (
           <div />
         )}
-        <button
-          onClick={handleSkip}
-          className="text-[#64748b] hover:text-white text-sm transition"
-        >
-          Skip
-        </button>
       </div>
 
       {/* Carousel — text sits at the bottom of this area, not centered */}
