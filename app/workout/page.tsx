@@ -9,7 +9,6 @@ import MetallicCanvas from "../components/MetallicCanvas";
 import { HIGH_BPM_CUTOFF } from "@/lib/constants";
 import { setNavDir } from "@/lib/nav";
 import { loadDjMode, saveDjMode, type DjMode } from "@/lib/djMode";
-import BicepCurl from "../components/BicepCurl";
 
 interface Exercise {
   id: string;
@@ -1005,7 +1004,7 @@ function WorkoutInner() {
       <>
         <MetallicCanvas r={16} g={185} b={129} />
         <div className="relative flex flex-col items-center justify-center min-h-screen text-white gap-6" style={{ zIndex: 1 }}>
-          <BicepCurl className="text-white" />
+          <h1 className="text-5xl">💪</h1>
           <h1 className="text-4xl font-bold tracking-wide">Workout Complete!</h1>
           <p className="text-[#64748b]">{totalSets} sets crushed</p>
           <button
