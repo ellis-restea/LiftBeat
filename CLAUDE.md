@@ -25,6 +25,7 @@ app/
   settings/page.tsx     — Thin AppShell wrapper (initialTab="settings")
   playlist-select/page.tsx — One-time onboarding playlist selection (no bottom nav)
   workout-setup/page.tsx   — Build workout (exercises, sets, reps, rest)
+  dj-mode/page.tsx         — DJ Mode onboarding step: choose Responsive vs Chill, saves to Supabase user_settings
   workout/page.tsx         — Main workout screen
   api/auth/[...nextauth]/route.js — Spotify OAuth + token refresh
   api/playlist-bpm/route.ts — Server route: Songstats BPM lookup + Supabase caching
@@ -38,11 +39,12 @@ app/
       HomeTab.tsx       — Saved workouts list with shimmer skeleton rows
       MusicTab.tsx      — Playlist selector with shimmer skeleton rows, pre-loads saved IDs
       StatsTab.tsx      — Stats (coming soon)
-      SettingsTab.tsx   — Sound + haptic toggles, persisted to localStorage
+      SettingsTab.tsx   — Sound + haptic toggles (localStorage) + DJ Type toggle (Supabase user_settings)
 lib/
   supabase.ts           — Supabase client
   feedback.ts           — Sound (Web Audio API) + haptic (navigator.vibrate) feedback system
   prefetchBpm.ts        — Fire-and-forget BPM prefetch after playlist save (called from MusicTab + playlist-select)
+  djMode.ts             — DjMode type ("responsive" | "chill"), loadDjMode / saveDjMode via Supabase user_settings
 types/
   next-auth.d.ts        — Session type extensions
 Environment Variables (.env.local):
@@ -65,14 +67,17 @@ exercises: id, workout_id, name, sets, reps, rest_seconds, order_index, superset
 user_playlists: id, user_id, playlist_ids (text array), created_at
 track_bpm_cache: spotify_track_id, bpm, cached_at, acousticness, danceability, duration, energy,
   instrumentalness, key, liveness, loudness, mode, speechiness, tempo, time_signature, valence
+user_settings: user_id (PK, text), dj_mode (text, default 'responsive'), created_at, updated_at
 
-IMPORTANT — Supabase migration required (run in SQL Editor if not done):
+IMPORTANT — Supabase migrations required (run in SQL Editor if not done):
   supabase/migrations/20260513_track_bpm_cache_fix_schema.sql
   Adds all 13 audio feature columns + deletes null-bpm rows so they get re-fetched.
+  supabase/migrations/20260520_user_settings.sql
+  Creates user_settings table (user_id PK, dj_mode text default 'responsive').
 
 User Flows:
 New user:
-Splash (/) → Landing (/landing) → Onboarding (3 slides) → Spotify login → Playlist select (saved to Supabase) → Workout setup → Workout screen
+Splash (/) → Landing (/landing) → Onboarding (3 slides) → Spotify login → DJ Mode select (/dj-mode) → Playlist select (saved to Supabase) → Workout setup → Workout screen
 Returning user:
 Splash (/) → Dashboard (saved workouts list + pencil icon to edit playlists) → Tap workout → Workout screen
 Logout flow:
@@ -286,7 +291,6 @@ Confirmed Spotify limitations (dev mode):
 - Playlist intelligence feature blocked until out of dev mode — can't link cached tracks to playlists without playlist endpoint
 
 Deferred to post-MVP:
-- Responsive vs Chill song switching mode
 - Workout resume/save state on back button
 - Manual song order change handling
 - Playlist intelligence feature
@@ -347,3 +351,47 @@ Total text-to-button gap: ~78px → ~38px (≈50% reduction).
 
 BPM cutoff correction in CLAUDE.md:
 Was incorrectly documented as 120. Actual value is 130 (set in lib/constants.ts in May 19 session).
+
+Session Summary — May 20 2026 (second session):
+
+DJ Mode feature — full implementation:
+New lib/djMode.ts: DjMode type ("responsive" | "chill"), loadDjMode / saveDjMode against Supabase user_settings table.
+New app/dj-mode/page.tsx: onboarding step inserted between Spotify login and playlist-select.
+  Large 80×40px iOS-style toggle — green (#22c55e) for Responsive, orange (#f97316) for Chill.
+  Glow card behind toggle: 0 0 64px 16px rgba(34,197,94,0.18) / rgba(249,115,22,0.18), transitions on mode change.
+  Staggered fade-in: emoji+headline via slide-text-in, toggle via slide-text-in-d1, description via slide-text-in-d2.
+  No horizontal page-enter animation — intentional (DJ Mode slide stands alone, not part of swipe carousel).
+  Continue button saves mode to Supabase then navigates to /workout-setup?from=onboarding.
+New Supabase table: user_settings (user_id text PK, dj_mode text default 'responsive').
+  Migration: supabase/migrations/20260520_user_settings.sql.
+Updated onboarding/page.tsx: Spotify login callbackUrl changed from /workout-setup?from=onboarding to /dj-mode.
+Settings DJ Type section: same glow card treatment (green/orange), same w-12 h-6 toggle as existing toggles.
+  Loads on mount via loadDjMode, saves on toggle via saveDjMode. Label: "DJ Type".
+Workout screen micro-toggle: fixed top-right, stacked label above 32×16px toggle, w-20 fixed width prevents
+  layout shift when switching between "Responsive" (wider) and "Chill" (narrower) labels. Saves to Supabase on tap.
+
+DJ Mode logic (workout/page.tsx):
+Responsive (existing behavior): state transitions fire skipToTargetBpmRef immediately.
+Chill (new): state transitions set pendingBpmStateRef instead. When fetchCurrentTrack detects a natural song end,
+  it reads + clears pendingBpmStateRef, checks if the newly landed track already matches the required BPM category,
+  and only fires skipToTargetBpm if correction is needed.
+djModeRef: useRef mirror of djMode state — used inside callbacks to avoid stale closures.
+pendingBpmStateRef: useRef<WorkoutState | null> — set by Chill-mode state transitions, cleared on song end or manual skip.
+triggerRestingBpm() helper: replaces 4 inline skip calls in handleSetDone — routes to Responsive or Chill path.
+handleEndWorkout: explicitly resets pendingBpmStateRef to null on workout end.
+
+Chill mode double-skip bug fix:
+Root cause: manual skip was firing BPM correction twice — once via verifyAndCorrectBpm in skipTrack,
+  and again via the pendingBpmStateRef path in fetchCurrentTrack when it detected the new track.
+Fix: skipTrack now reads + clears pendingBpmStateRef before calling verifyAndCorrectBpm. fetchCurrentTrack
+  sees no pending state on the manual-skip track change and skips the Chill path.
+Added [Chill/skip] and [Chill/natural] console logs at every decision point for debugging.
+
+Rest timer — timestamp-based:
+Replaced remaining -= 1 decrement with Math.max(0, duration - Math.floor((Date.now() - startTime) / 1000)).
+Self-corrects when returning from background tab. Added comment: auto BPM switching doesn't work when
+  tab is backgrounded (browser timer throttling) — native wrapping required to fix properly.
+
+Quick track poll after skip/prev:
+After the 500ms settle in skipTrack and prevTrack, fires a one-off Spotify currently-playing poll at ~800ms
+  to update track name/artist/cover while fade-up is still in progress (optimistic UI feel).
