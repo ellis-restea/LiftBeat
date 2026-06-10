@@ -12,6 +12,11 @@ export const metadata: Metadata = {
     statusBarStyle: "black-translucent",
     title: "LiftBeat",
   },
+  // Next.js generates mobile-web-app-capable (Android) from appleWebApp.capable
+  // but not the iOS-specific tag — add it explicitly so standalone mode works on iPhone
+  other: {
+    "apple-mobile-web-app-capable": "yes",
+  },
   icons: {
     apple: "/icons/apple-touch-icon.png",
   },
