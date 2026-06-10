@@ -4,6 +4,11 @@ html, body {
   background-color: #111116;
 }
 
+/* Push content below the iPhone status bar in standalone PWA mode */
+body {
+  padding-top: max(60px, env(safe-area-inset-top));
+}
+
 /* Collapses the rest timer on mobile so it takes no layout space when not resting.
    On desktop (md+) the timer is always in flow at its natural height. */
 .timer-collapsed {
