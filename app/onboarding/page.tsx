@@ -20,7 +20,7 @@ const slides = [
     body: "High tempo music (130+ BPM) during sets helps you push 10.7% longer. Lower tempo music during rest leads to 13% faster heart rate recovery after your set. Same workout, better music timing, better results.",
     source: "Stork et al., BMC Sports Science, 2019",
     visual: "📈",
-    visualMarginTop: 45,
+    visualMarginTop: 65,
     bodyMarginBottom: 0,
     cta: null,
   },
@@ -30,7 +30,7 @@ const slides = [
     body: "High BPM during your set. Low BPM during rest. Synced to your Spotify, timed to your workout. Hit one button to start — we handle everything else.",
     visual: "⚡",
     visualMarginTop: 0,
-    bodyMarginBottom: 92,
+    bodyMarginBottom: 82,
     source: null,
     cta: "Connect Spotify & Get Started",
   },
@@ -102,20 +102,20 @@ export default function Onboarding() {
                 key={slideAnimKeys[i] ?? 0}
                 className="text-center max-w-sm mx-auto"
               >
-                <p className={`text-blue-500 text-xs font-bold uppercase tracking-widest mb-3${animating === i ? " slide-text-in" : ""}`}>
+                <p className={`text-blue-500 text-xs font-bold uppercase tracking-widest mb-3${i > 0 && animating === i ? " slide-text-in" : ""}`}>
                   {s.tag}
                 </p>
-                <h2 className={`text-3xl font-black tracking-wide mb-4 leading-tight${animating === i ? " slide-text-in" : ""}`}>
+                <h2 className={`text-3xl font-black tracking-wide mb-4 leading-tight${i > 0 && animating === i ? " slide-text-in" : ""}`}>
                   {s.headline}
                 </h2>
                 <p
-                  className={`text-[#64748b] text-base text-center leading-relaxed${animating === i ? " slide-text-in-d1" : ""}`}
+                  className={`text-[#64748b] text-base text-center leading-relaxed${i > 0 && animating === i ? " slide-text-in-d1" : ""}`}
                   style={s.bodyMarginBottom ? { marginBottom: s.bodyMarginBottom } : undefined}
                 >
                   {s.body}
                 </p>
                 {s.source && (
-                  <p className={`text-[#64748b] text-xs mt-3 italic font-light${animating === i ? " slide-text-in-d2" : ""}`}>
+                  <p className={`text-[#64748b] text-xs mt-3 italic font-light${i > 0 && animating === i ? " slide-text-in-d2" : ""}`}>
                     {s.source}
                   </p>
                 )}
