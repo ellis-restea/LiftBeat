@@ -202,12 +202,14 @@ html, body {
   .btn-animated {
     position: relative;
     isolation: isolate;
+    overflow: hidden;
   }
 
   .btn-animated::after {
     content: "";
     position: absolute;
     inset: 0;
+    z-index: -1;
     border-radius: inherit;
     padding: 1.5px;
     background: conic-gradient(
