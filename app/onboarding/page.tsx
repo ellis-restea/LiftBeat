@@ -10,6 +10,7 @@ const slides = [
     body: "Between every set, you're fumbling with your phone, skipping songs, killing your momentum. Your music should match your intensity — automatically. That's what LiftBeat does.",
     visual: "🎧",
     visualMarginTop: 120,
+    emojiMarginTop: 40,
     bodyMarginBottom: 0,
     source: null,
     cta: null,
@@ -30,7 +31,7 @@ const slides = [
     body: "High BPM during your set. Low BPM during rest. Synced to your Spotify, timed to your workout. Hit one button to start — we handle everything else.",
     visual: "⚡",
     visualMarginTop: 0,
-    bodyMarginBottom: 82,
+    bodyMarginBottom: 130,
     source: null,
     cta: "Connect Spotify & Get Started",
   },
@@ -92,7 +93,7 @@ export default function Onboarding() {
               style={{ width: `${100 / slides.length}%`, paddingBottom: s.visualMarginTop ?? 0 }}
               className="flex flex-col items-center justify-end px-8 text-center gap-6"
             >
-              <div className="text-6xl">{s.visual}</div>
+              <div className="text-6xl" style={s.emojiMarginTop ? { marginTop: s.emojiMarginTop } : undefined}>{s.visual}</div>
               {/* Rekeying this div remounts it, restarting CSS animations from scratch */}
               <div
                 key={slideAnimKeys[i] ?? 0}
