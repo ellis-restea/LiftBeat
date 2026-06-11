@@ -116,6 +116,8 @@ function WorkoutInner() {
   const withMuteTransitionRef = useRef<(fn: () => Promise<void>) => Promise<void>>(async (fn) => fn());
   // True once idle-state BPM correction has run (prevents re-entry)
   const correctionAppliedRef = useRef(false);
+  // Stores the triggerRestingBpm setTimeout so prevTrack can cancel it before it fires
+  const restingBpmTimerRef = useRef<NodeJS.Timeout | null>(null);
   const fadeUpRef = useRef<(vol: number) => Promise<void>>(async () => {});
   const precomputedHighSkipsRef = useRef<number | null>(null);
   const precomputedLowSkipsRef = useRef<number | null>(null);
@@ -663,7 +665,11 @@ function WorkoutInner() {
 
   const triggerRestingBpm = () => {
     if (djModeRef.current === "responsive") {
-      setTimeout(() => skipToTargetBpmRef.current("resting"), 500);
+      if (restingBpmTimerRef.current) clearTimeout(restingBpmTimerRef.current);
+      restingBpmTimerRef.current = setTimeout(() => {
+        restingBpmTimerRef.current = null;
+        skipToTargetBpmRef.current("resting");
+      }, 500);
     } else {
       pendingBpmStateRef.current = "resting";
     }
@@ -856,6 +862,12 @@ function WorkoutInner() {
     }
     if (!deviceIdRef.current) return;
 
+    // Cancel any pending resting-BPM skip so it doesn't fire mid-transition and override prevTrack
+    if (restingBpmTimerRef.current) {
+      clearTimeout(restingBpmTimerRef.current);
+      restingBpmTimerRef.current = null;
+    }
+
     const prevUri = history.pop()!;
     const vol = await captureVolumeRef.current();
     setIsTransitioning(true);
@@ -863,7 +875,7 @@ function WorkoutInner() {
     lastCommandRef.current = Date.now();
 
     try {
-      await Promise.all([
+      const [, playRes] = await Promise.all([
         spotifyFetch(`https://api.spotify.com/v1/me/player/volume?volume_percent=0`, {
           method: "PUT",
           headers: { Authorization: `Bearer ${session.accessToken}` },
@@ -874,6 +886,28 @@ function WorkoutInner() {
           body: JSON.stringify({ uris: [prevUri] }),
         }),
       ]);
+
+      // PUT /play returns 204 on success. On failure re-fetch the active device and retry once.
+      if (!playRes.ok && playRes.status !== 429) {
+        console.log(`[prevTrack] PUT /play failed (${playRes.status}) — re-fetching device and retrying`);
+        try {
+          const dr = await spotifyFetch("https://api.spotify.com/v1/me/player/devices", {
+            headers: { Authorization: `Bearer ${session.accessToken}` },
+          });
+          if (dr.ok) {
+            const { devices } = await dr.json();
+            const d = devices?.find((d: any) => d.is_active) ?? devices?.[0];
+            if (d) deviceIdRef.current = d.id;
+          }
+        } catch { /* non-fatal */ }
+        if (deviceIdRef.current) {
+          await spotifyFetch(`https://api.spotify.com/v1/me/player/play?device_id=${deviceIdRef.current}`, {
+            method: "PUT",
+            headers: { Authorization: `Bearer ${session.accessToken}`, "Content-Type": "application/json" },
+            body: JSON.stringify({ uris: [prevUri] }),
+          });
+        }
+      }
 
       await new Promise(r => setTimeout(r, 500));
 
@@ -919,6 +953,7 @@ function WorkoutInner() {
     trackHistoryRef.current = [];
     prevTrackIdRef.current = null;
     correctionAppliedRef.current = false;
+    if (restingBpmTimerRef.current) { clearTimeout(restingBpmTimerRef.current); restingBpmTimerRef.current = null; }
     deviceIdRef.current = null;
     lastCommandRef.current = 0;
     rateLimitUntilRef.current = 0;
