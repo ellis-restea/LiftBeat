@@ -89,10 +89,10 @@ export default function Onboarding() {
           {slides.map((s, i) => (
             <div
               key={i}
-              style={{ width: `${100 / slides.length}%` }}
-              className="flex flex-col items-center justify-end pb-0 px-8 text-center gap-6"
+              style={{ width: `${100 / slides.length}%`, paddingBottom: s.visualMarginTop ?? 0 }}
+              className="flex flex-col items-center justify-end px-8 text-center gap-6"
             >
-              <div className="text-6xl" style={s.visualMarginTop ? { marginTop: s.visualMarginTop } : undefined}>{s.visual}</div>
+              <div className="text-6xl">{s.visual}</div>
               {/* Rekeying this div remounts it, restarting CSS animations from scratch */}
               <div
                 key={slideAnimKeys[i] ?? 0}
