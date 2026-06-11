@@ -1049,7 +1049,7 @@ function WorkoutInner() {
 
       <button
         onClick={() => setShowExitDialog(true)}
-        className={`fixed left-4 z-20 text-gray-400 hover:text-white active:scale-95 transition-all touch-manipulation ${bannerVisible ? "top-14" : "top-4"}`}
+        className={`fixed left-4 z-20 text-gray-400 hover:text-white active:scale-95 transition-all touch-manipulation ${bannerVisible ? "top-[96px]" : "top-[56px]"}`}
         aria-label="Back"
       >
         <svg viewBox="0 0 24 24" fill="currentColor" className="w-7 h-7">
@@ -1059,7 +1059,7 @@ function WorkoutInner() {
 
       {/* DJ Type micro-toggle — top right, changes take effect on next state transition */}
       <div
-        className={`fixed right-4 z-20 flex flex-col items-center gap-1 touch-manipulation w-20 ${bannerVisible ? "top-14" : "top-4"}`}
+        className={`fixed right-4 z-20 flex flex-col items-center gap-1 touch-manipulation w-20 ${bannerVisible ? "top-[96px]" : "top-[56px]"}`}
       >
         <span
           className="text-[10px] font-semibold uppercase tracking-wide"
@@ -1213,7 +1213,7 @@ function WorkoutInner() {
 
         {/* Top */}
         <div className={`text-center w-full shrink-0 ${premiumRequired ? "mt-8" : "mt-1"}`}>
-          <p className="text-gray-400 text-xs uppercase tracking-widest mb-2">
+          <p className="text-gray-400 text-xs uppercase tracking-widest mb-2 mt-[40px]">
             Exercise {currentExerciseIndex + 1} of {exercises.length}
           </p>
           {isInSuperset && (
@@ -1293,7 +1293,7 @@ function WorkoutInner() {
           </div>
 
           {/* Playback controls */}
-          <div className="flex items-center w-full">
+          <div className="flex items-center w-full mb-[45px]">
             <div className="flex-1" />
             <div className="flex items-center gap-6 md:gap-8">
               <button
@@ -1378,7 +1378,7 @@ function WorkoutInner() {
           {workoutState === "warmup" && (
             <button
               onClick={handleStartSet}
-              className="w-full bg-blue-500 hover:bg-blue-400 text-white font-bold py-4 md:py-5 rounded-2xl text-xl touch-manipulation active:scale-95 transition-transform btn-animated"
+              className="w-full bg-blue-500 hover:bg-blue-400 text-white font-bold py-4 md:py-5 rounded-2xl text-xl touch-manipulation active:scale-95 transition-transform btn-animated mb-[20px]"
             >
               Start Set 💪
             </button>
@@ -1386,7 +1386,7 @@ function WorkoutInner() {
           {workoutState === "exercising" && (
             <button
               onClick={handleSetDone}
-              className="w-full bg-blue-500 hover:bg-blue-400 text-white font-bold py-4 md:py-5 rounded-2xl text-xl touch-manipulation active:scale-95 transition-transform btn-animated"
+              className="w-full bg-blue-500 hover:bg-blue-400 text-white font-bold py-4 md:py-5 rounded-2xl text-xl touch-manipulation active:scale-95 transition-transform btn-animated mb-[20px]"
             >
               Done with Set ✓
             </button>
@@ -1394,7 +1394,7 @@ function WorkoutInner() {
           {workoutState === "resting" && (
             <button
               disabled
-              className="w-full bg-gray-800 text-gray-400 font-bold py-4 md:py-5 rounded-2xl text-xl touch-manipulation cursor-not-allowed border border-white/5"
+              className="w-full bg-gray-800 text-gray-400 font-bold py-4 md:py-5 rounded-2xl text-xl touch-manipulation cursor-not-allowed border border-white/5 mb-[20px]"
             >
               {"Resting" + ".".repeat(restingDots)}
             </button>
