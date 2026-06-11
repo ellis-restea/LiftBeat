@@ -9,6 +9,8 @@ const slides = [
     headline: "You're losing reps to your playlist.",
     body: "Between every set, you're fumbling with your phone, skipping songs, killing your momentum. Your music should match your intensity — automatically. That's what LiftBeat does.",
     visual: "🎧",
+    visualMarginTop: 120,
+    bodyMarginBottom: 0,
     source: null,
     cta: null,
   },
@@ -18,6 +20,8 @@ const slides = [
     body: "High tempo music (130+ BPM) during sets helps you push 10.7% longer. Lower tempo music during rest leads to 13% faster heart rate recovery after your set. Same workout, better music timing, better results.",
     source: "Stork et al., BMC Sports Science, 2019",
     visual: "📈",
+    visualMarginTop: 60,
+    bodyMarginBottom: 0,
     cta: null,
   },
   {
@@ -25,6 +29,8 @@ const slides = [
     headline: "LiftBeat is your workout DJ.",
     body: "High BPM during your set. Low BPM during rest. Synced to your Spotify, timed to your workout. Hit one button to start — we handle everything else.",
     visual: "⚡",
+    visualMarginTop: 0,
+    bodyMarginBottom: 100,
     source: null,
     cta: "Connect Spotify & Get Started",
   },
@@ -65,7 +71,7 @@ export default function Onboarding() {
         {current > 0 ? (
           <button
             onClick={handleBack}
-            className="text-[#64748b] hover:text-white text-sm transition"
+            className="text-[#64748b] hover:text-white text-sm transition mt-5"
           >
             ← Back
           </button>
@@ -90,7 +96,7 @@ export default function Onboarding() {
               style={{ width: `${100 / slides.length}%` }}
               className="flex flex-col items-center justify-end pb-0 px-8 text-center gap-6"
             >
-              <div className="text-6xl">{s.visual}</div>
+              <div className="text-6xl" style={s.visualMarginTop ? { marginTop: s.visualMarginTop } : undefined}>{s.visual}</div>
               {/* Rekeying this div remounts it, restarting CSS animations from scratch */}
               <div
                 key={slideAnimKeys[i] ?? 0}
@@ -102,7 +108,10 @@ export default function Onboarding() {
                 <h2 className={`text-3xl font-black tracking-wide mb-4 leading-tight${animating === i ? " slide-text-in" : ""}`}>
                   {s.headline}
                 </h2>
-                <p className={`text-[#64748b] text-base text-center leading-relaxed${animating === i ? " slide-text-in-d1" : ""}`}>
+                <p
+                  className={`text-[#64748b] text-base text-center leading-relaxed${animating === i ? " slide-text-in-d1" : ""}`}
+                  style={s.bodyMarginBottom ? { marginBottom: s.bodyMarginBottom } : undefined}
+                >
                   {s.body}
                 </p>
                 {s.source && (
@@ -133,14 +142,14 @@ export default function Onboarding() {
         {slide.cta ? (
           <button
             onClick={handleSpotify}
-            className="w-full bg-blue-500 hover:bg-blue-400 text-white font-bold py-4 rounded-xl text-lg transition active:scale-95 btn-animated"
+            className="w-full bg-blue-500 hover:bg-blue-400 text-white font-bold py-4 rounded-xl text-lg transition active:scale-95 btn-animated mt-[10px] mb-[40px]"
           >
             {slide.cta}
           </button>
         ) : (
           <button
             onClick={handleNext}
-            className="w-full bg-blue-500 hover:bg-blue-400 text-white font-bold py-4 rounded-xl text-lg transition active:scale-95 btn-animated"
+            className="w-full bg-blue-500 hover:bg-blue-400 text-white font-bold py-4 rounded-xl text-lg transition active:scale-95 btn-animated mt-[10px] mb-[40px]"
           >
             Next →
           </button>
