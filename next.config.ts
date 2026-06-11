@@ -11,7 +11,7 @@ const withPWA: (config: NextConfig) => NextConfig = require("next-pwa")({
 });
 
 const nextConfig: NextConfig = {
-  allowedDevOrigins: ["127.0.0.1"],
+  allowedDevOrigins: ["127.0.0.1", "localhost"],
 };
 
 export default withPWA(nextConfig);
