@@ -24,14 +24,15 @@ export default function AppShell({ initialTab = 0 }: Props) {
 
   useEffect(() => {
     if (!session?.user?.name) return;
-    supabase
-      .from("user_playlists")
-      .select("playlist_ids")
-      .eq("user_id", session.user.name)
-      .single()
-      .then(({ data }) => {
-        setHasPlaylists(Array.isArray(data?.playlist_ids) && data.playlist_ids.length > 0);
-      });
+    Promise.all([
+      supabase.from("user_playlists").select("playlist_ids").eq("user_id", session.user.name).single(),
+      supabase.from("user_settings").select("onboarding_completed").eq("user_id", session.user.name).maybeSingle(),
+    ]).then(([playlistRes, settingsRes]) => {
+      setHasPlaylists(Array.isArray(playlistRes.data?.playlist_ids) && playlistRes.data.playlist_ids.length > 0);
+      if (!settingsRes.data?.onboarding_completed) {
+        router.replace("/onboarding-gate");
+      }
+    });
   }, [session]);
 
   // Play entry animation on the initial tab once mounted

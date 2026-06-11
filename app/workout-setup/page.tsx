@@ -168,6 +168,13 @@ function WorkoutSetupInner() {
         setSaving(false);
         return;
       }
+
+      await supabase
+        .from("user_settings")
+        .upsert(
+          { user_id: session.user.name, onboarding_completed: true },
+          { onConflict: "user_id" }
+        );
     }
 
     router.push("/dashboard");

@@ -14,7 +14,8 @@ Running locally on http://127.0.0.1:3000
 
 Current File Structure:
 app/
-  page.tsx              — Splash screen: always shown on app open, 1s minimum, routes to /dashboard or /landing
+  page.tsx              — Splash screen: always shown on app open, 1s minimum, checks onboarding_completed in user_settings, routes to /onboarding-gate (new users) or /dashboard (returning users) or /landing (unauthenticated)
+  onboarding-gate/page.tsx — Full-screen block for authenticated new users: headline + Get Started → /onboarding
   landing/page.tsx      — Landing page (Get Started / Log In) — unauthenticated users land here after splash
   layout.tsx            — Root layout with SessionProvider
   providers.tsx         — Client-side SessionProvider wrapper
@@ -67,13 +68,15 @@ exercises: id, workout_id, name, sets, reps, rest_seconds, order_index, superset
 user_playlists: id, user_id, playlist_ids (text array), created_at
 track_bpm_cache: spotify_track_id, bpm, cached_at, acousticness, danceability, duration, energy,
   instrumentalness, key, liveness, loudness, mode, speechiness, tempo, time_signature, valence
-user_settings: user_id (PK, text), dj_mode (text, default 'responsive'), created_at, updated_at
+user_settings: user_id (PK, text), dj_mode (text, default 'responsive'), onboarding_completed (boolean, default false), created_at, updated_at
 
 IMPORTANT — Supabase migrations required (run in SQL Editor if not done):
   supabase/migrations/20260513_track_bpm_cache_fix_schema.sql
   Adds all 13 audio feature columns + deletes null-bpm rows so they get re-fetched.
   supabase/migrations/20260520_user_settings.sql
   Creates user_settings table (user_id PK, dj_mode text default 'responsive').
+  supabase/migrations/20260611_onboarding_completed.sql
+  Adds onboarding_completed boolean (default false) to user_settings.
 
 User Flows:
 New user:
