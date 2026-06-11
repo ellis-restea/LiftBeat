@@ -1344,7 +1344,7 @@ function WorkoutInner() {
         {/* Bottom */}
         <div className="w-full max-w-sm mb-2 md:mb-4 pt-2.5 md:pt-0 flex flex-col gap-3 md:gap-4 shrink-0">
           {workoutState === "idle" && (
-            <div className="grid w-full">
+            <div className="grid w-full mb-[20px]">
               <a
                 href="spotify://"
                 style={{
