@@ -20,7 +20,7 @@ const slides = [
     body: "High tempo music (130+ BPM) during sets helps you push 10.7% longer. Lower tempo music during rest leads to 13% faster heart rate recovery after your set. Same workout, better music timing, better results.",
     source: "Stork et al., BMC Sports Science, 2019",
     visual: "📈",
-    visualMarginTop: 65,
+    visualMarginTop: 72,
     bodyMarginBottom: 0,
     cta: null,
   },
@@ -68,16 +68,12 @@ export default function Onboarding() {
     <div className={`min-h-screen bg-[#0a0a0f] text-[#f1f5f9] flex flex-col overflow-hidden ${enterClass}`}>
       {/* Top bar */}
       <div className="flex items-center p-6 shrink-0">
-        {current > 0 ? (
-          <button
-            onClick={handleBack}
-            className="text-[#64748b] hover:text-white text-sm transition mt-[35px]"
-          >
-            ← Back
-          </button>
-        ) : (
-          <div />
-        )}
+        <button
+          onClick={handleBack}
+          className={`text-[#64748b] hover:text-white text-sm transition mt-[35px] ${current === 0 ? "invisible pointer-events-none" : ""}`}
+        >
+          ← Back
+        </button>
       </div>
 
       {/* Carousel — text sits at the bottom of this area, not centered */}
@@ -102,20 +98,20 @@ export default function Onboarding() {
                 key={slideAnimKeys[i] ?? 0}
                 className="text-center max-w-sm mx-auto"
               >
-                <p className={`text-blue-500 text-xs font-bold uppercase tracking-widest mb-3${i > 0 && animating === i ? " slide-text-in" : ""}`}>
+                <p className={`text-blue-500 text-xs font-bold uppercase tracking-widest mb-3${i > 0 && animating === i ? " carousel-fade-in" : ""}`}>
                   {s.tag}
                 </p>
-                <h2 className={`text-3xl font-black tracking-wide mb-4 leading-tight${i > 0 && animating === i ? " slide-text-in" : ""}`}>
+                <h2 className={`text-3xl font-black tracking-wide mb-4 leading-tight${i > 0 && animating === i ? " carousel-fade-in" : ""}`}>
                   {s.headline}
                 </h2>
                 <p
-                  className={`text-[#64748b] text-base text-center leading-relaxed${i > 0 && animating === i ? " slide-text-in-d1" : ""}`}
+                  className={`text-[#64748b] text-base text-center leading-relaxed${i > 0 && animating === i ? " carousel-fade-in-d1" : ""}`}
                   style={s.bodyMarginBottom ? { marginBottom: s.bodyMarginBottom } : undefined}
                 >
                   {s.body}
                 </p>
                 {s.source && (
-                  <p className={`text-[#64748b] text-xs mt-3 italic font-light${i > 0 && animating === i ? " slide-text-in-d2" : ""}`}>
+                  <p className={`text-[#64748b] text-xs mt-3 italic font-light${i > 0 && animating === i ? " carousel-fade-in-d2" : ""}`}>
                     {s.source}
                   </p>
                 )}
