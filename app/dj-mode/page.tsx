@@ -103,7 +103,7 @@ function DjModeInner() {
         <button
           onClick={handleContinue}
           disabled={saving || !session?.user?.name}
-          className="w-full bg-blue-500 hover:bg-blue-400 disabled:opacity-50 text-white font-bold py-4 rounded-xl text-lg transition active:scale-95 btn-animated"
+          className="w-full bg-blue-500 hover:bg-blue-400 disabled:opacity-50 text-white font-bold py-4 rounded-xl text-lg transition active:scale-95 btn-animated overflow-hidden mb-[40px]"
         >
           {saving ? "Saving…" : "Continue →"}
         </button>
