@@ -20,7 +20,7 @@ const slides = [
     body: "High tempo music (130+ BPM) during sets helps you push 10.7% longer. Lower tempo music during rest leads to 13% faster heart rate recovery after your set. Same workout, better music timing, better results.",
     source: "Stork et al., BMC Sports Science, 2019",
     visual: "📈",
-    visualMarginTop: 60,
+    visualMarginTop: 45,
     bodyMarginBottom: 0,
     cta: null,
   },
@@ -71,7 +71,7 @@ export default function Onboarding() {
         {current > 0 ? (
           <button
             onClick={handleBack}
-            className="text-[#64748b] hover:text-white text-sm transition mt-5"
+            className="text-[#64748b] hover:text-white text-sm transition mt-[35px]"
           >
             ← Back
           </button>
