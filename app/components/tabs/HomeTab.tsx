@@ -95,7 +95,7 @@ export default function HomeTab({ hasPlaylists }: Props) {
           </div>
         </div>
 
-        <h2 className="text-lg font-semibold tracking-wide mb-4">Your Workouts</h2>
+        <h2 className="text-lg font-semibold tracking-wide mb-4 mt-[55px]">Your Workouts</h2>
 
         {loading ? (
           <div className="grid gap-3 mb-4">
