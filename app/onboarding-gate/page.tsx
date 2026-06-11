@@ -1,13 +1,15 @@
 "use client";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import MetallicCanvas from "@/app/components/MetallicCanvas";
+import LoadingScreen from "@/app/components/LoadingScreen";
 
 export default function OnboardingGate() {
   const router = useRouter();
   const { data: session, status } = useSession();
+  const [checked, setChecked] = useState(false);
 
   useEffect(() => {
     if (status === "unauthenticated") {
@@ -23,9 +25,13 @@ export default function OnboardingGate() {
       .then(({ data }) => {
         if (data?.onboarding_completed === true) {
           router.replace("/dashboard");
+        } else {
+          setChecked(true);
         }
       });
   }, [status, session]);
+
+  if (!checked) return <LoadingScreen />;
 
   return (
     <>
