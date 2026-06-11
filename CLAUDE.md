@@ -395,3 +395,39 @@ Self-corrects when returning from background tab. Added comment: auto BPM switch
 Quick track poll after skip/prev:
 After the 500ms settle in skipTrack and prevTrack, fires a one-off Spotify currently-playing poll at ~800ms
   to update track name/artist/cover while fade-up is still in progress (optimistic UI feel).
+
+Session Summary — June 10 2026:
+
+PWA setup (completed in prior session, carried forward):
+app/manifest.ts — Next.js native manifest served at /manifest.webmanifest (auto-linked via metadata).
+  display: standalone, orientation: portrait, icons: icon-192, icon-512, icon-maskable-512.
+next.config.ts wrapped with next-pwa (dest: public, disable in dev, skipWaiting, buildExcludes middleware manifest).
+Build script changed to "next build --webpack" — next-pwa v5 is incompatible with Turbopack.
+app/layout.tsx — typed metadata/viewport exports. apple-mobile-web-app-capable added via metadata.other
+  because Next.js appleWebApp.capable generates mobile-web-app-capable (Android) not the iOS-specific tag.
+.gitignore: /public/sw.js, sw.js.map, workbox-*.js, workbox-*.js.map excluded.
+authOptions moved from app/api/auth/[...nextauth]/route.js to lib/auth.js — App Router disallows
+  non-HTTP-method exports from route files. All three importing files updated.
+
+btn-animated swish border fix (globals.css):
+overflow: hidden added to .btn-animated so ::after pseudo-element is clipped to button bounds on iOS Safari.
+z-index: -1 added to .btn-animated::after — with isolation: isolate on the parent creating a stacking context,
+  the pseudo-element paints above the button background but below text (no overlap with content).
+position: relative was already present on .btn-animated.
+
+Spacing fixes applied this session:
+onboarding/page.tsx:
+  - Problem slide: visualMarginTop=120 on headphone emoji (mt-[120px])
+  - Science slide: visualMarginTop=45 on graph emoji (was 60, reduced by 15)
+  - Solution slide: bodyMarginBottom=92 on paragraph text
+  - Back button (slides 2+): mt-[35px] (20px base + 15px added)
+  - All CTA/Next buttons: mt-[10px] mb-[40px]
+dj-mode/page.tsx:
+  - Continue button: mb-[40px], overflow-hidden removed (now handled by .btn-animated in globals.css)
+workout-setup/page.tsx:
+  - Page heading ("Build your workout" / "Edit workout"): mt-[35px]
+  - Back arrow button (edit mode): mt-[35px]
+
+Global safe-area-inset note:
+Attempted body { padding-top: max(60px, env(safe-area-inset-top)) } — caused unwanted full-page scroll.
+Reverted. Safe area insets should be applied per-page/per-component, not globally on body.
