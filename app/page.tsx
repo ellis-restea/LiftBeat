@@ -37,7 +37,7 @@ export default function Home() {
       return;
     }
     if (status === "authenticated" && onboardingChecked) {
-      router.replace(onboardingCompleted ? "/dashboard" : "/onboarding-gate");
+      router.replace(onboardingCompleted ? "/dashboard" : "/landing");
     }
   }, [minTimeElapsed, status, onboardingChecked, onboardingCompleted]);
 

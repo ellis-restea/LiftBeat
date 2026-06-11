@@ -81,7 +81,7 @@ export default function Landing() {
           <button
             onClick={() => {
               setNavDir("forward");
-              signIn("spotify", { callbackUrl: "/" });
+              signIn("spotify", { callbackUrl: "/onboarding-gate" });
             }}
             className="w-full bg-transparent border border-blue-500 text-blue-500 hover:bg-blue-500/10 font-bold py-4 rounded-xl text-lg transition active:scale-95 btn-animated"
           >
