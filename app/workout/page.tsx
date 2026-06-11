@@ -870,13 +870,13 @@ function WorkoutInner() {
 
     const prevUri = history.pop()!;
     const urisToPlay = [prevUri];
-    console.log(`[prevTrack] sending PUT /play — device: ${deviceIdRef.current} — uris:`, urisToPlay);
     const vol = await captureVolumeRef.current();
     setIsTransitioning(true);
     isTransitioningRef.current = true;
     lastCommandRef.current = Date.now();
 
     try {
+      console.log(`[prevTrack] PUT /play — device: ${deviceIdRef.current} — ${urisToPlay.length} uri(s):`, urisToPlay);
       const [, playRes] = await Promise.all([
         spotifyFetch(`https://api.spotify.com/v1/me/player/volume?volume_percent=0`, {
           method: "PUT",
