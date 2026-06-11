@@ -1410,16 +1410,18 @@ function WorkoutInner() {
             Play any playlist in Spotify, then come back
           </p>
 
-          <div className="w-full">
-            <div className="flex justify-between text-xs text-gray-400 mb-1">
-              <span>Workout Progress</span>
-              <span>{workoutProgress}%</span>
-            </div>
-            <div className="w-full bg-gray-700 rounded-full h-1.5 md:h-2">
-              <div
-                className="bg-blue-500 h-1.5 md:h-2 rounded-full transition-all"
-                style={{ width: `${workoutProgress}%` }}
-              />
+          <div className="flex justify-center">
+            <div style={{ width: 300 }}>
+              <div className="flex justify-between text-xs text-gray-400 mb-1">
+                <span>Workout Progress</span>
+                <span>{workoutProgress}%</span>
+              </div>
+              <div className="w-full bg-gray-700 rounded-full h-1.5 md:h-2">
+                <div
+                  className="bg-blue-500 h-1.5 md:h-2 rounded-full transition-all"
+                  style={{ width: `${workoutProgress}%` }}
+                />
+              </div>
             </div>
           </div>
         </div>
