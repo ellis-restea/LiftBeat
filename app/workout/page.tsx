@@ -869,6 +869,8 @@ function WorkoutInner() {
     }
 
     const prevUri = history.pop()!;
+    const urisToPlay = [prevUri];
+    console.log(`[prevTrack] sending PUT /play — device: ${deviceIdRef.current} — uris:`, urisToPlay);
     const vol = await captureVolumeRef.current();
     setIsTransitioning(true);
     isTransitioningRef.current = true;
@@ -883,9 +885,11 @@ function WorkoutInner() {
         spotifyFetch(`https://api.spotify.com/v1/me/player/play?device_id=${deviceIdRef.current}`, {
           method: "PUT",
           headers: { Authorization: `Bearer ${session.accessToken}`, "Content-Type": "application/json" },
-          body: JSON.stringify({ uris: [prevUri] }),
+          body: JSON.stringify({ uris: urisToPlay }),
         }),
       ]);
+
+      console.log(`[prevTrack] PUT /play response: ${playRes.status} ${playRes.ok ? "OK" : "FAILED"}`);
 
       // PUT /play returns 204 on success. On failure re-fetch the active device and retry once.
       if (!playRes.ok && playRes.status !== 429) {
