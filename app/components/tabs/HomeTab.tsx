@@ -58,12 +58,12 @@ export default function HomeTab({ hasPlaylists }: Props) {
         {/* Header */}
         <div className="flex justify-between items-center mb-8">
           <div>
-            <h1 className="text-3xl font-bold tracking-wide">LiftBeat</h1>
+            <h1 className="text-3xl font-bold tracking-wide mt-[40px]">LiftBeat</h1>
             <p className="text-[#64748b] text-sm mt-1">
               Hey, {session?.user?.name?.split(" ")[0]} 👋
             </p>
           </div>
-          <div ref={avatarRef} className="relative">
+          <div ref={avatarRef} className="relative mt-[15px]">
             <button
               onClick={() => setAvatarMenuOpen((v) => !v)}
               className="w-9 h-9 rounded-full overflow-hidden border border-white/10 hover:border-blue-500/50 transition active:scale-95 focus:outline-none"

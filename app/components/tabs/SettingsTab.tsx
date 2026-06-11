@@ -77,7 +77,7 @@ export default function SettingsTab() {
   return (
     <div className="p-8">
       <div className="max-w-md mx-auto">
-        <h1 className="text-3xl font-bold tracking-wide mb-1">Settings</h1>
+        <h1 className="text-3xl font-bold tracking-wide mb-1 mt-[35px]">Settings</h1>
         <p className="text-[#64748b] mb-8">Your LiftBeat account.</p>
 
         {/* Account */}
@@ -169,9 +169,6 @@ export default function SettingsTab() {
           Sign out
         </button>
 
-        <p className="text-center text-[#64748b] text-xs mt-6">
-          More settings coming soon — BPM thresholds, rest notifications, and more.
-        </p>
       </div>
     </div>
   );
