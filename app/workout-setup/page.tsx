@@ -212,7 +212,7 @@ function WorkoutSetupInner() {
           {!isOnboarding && (
             <button
               onClick={handleBack}
-              className="mr-3 -ml-1 text-[#64748b] hover:text-white active:scale-95 transition-all touch-manipulation"
+              className="mr-3 -ml-1 text-[#64748b] hover:text-white active:scale-95 transition-all touch-manipulation mt-[35px]"
               aria-label="Back"
             >
               <svg viewBox="0 0 24 24" fill="currentColor" className="w-6 h-6">
