@@ -30,7 +30,7 @@ const slides = [
     body: "High BPM during your set. Low BPM during rest. Synced to your Spotify, timed to your workout. Hit one button to start — we handle everything else.",
     visual: "⚡",
     visualMarginTop: 0,
-    bodyMarginBottom: 100,
+    bodyMarginBottom: 92,
     source: null,
     cta: "Connect Spotify & Get Started",
   },
