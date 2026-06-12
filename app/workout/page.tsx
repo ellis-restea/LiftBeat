@@ -118,6 +118,8 @@ function WorkoutInner() {
   const correctionAppliedRef = useRef(false);
   // Stores the triggerRestingBpm setTimeout so prevTrack can cancel it before it fires
   const restingBpmTimerRef = useRef<NodeJS.Timeout | null>(null);
+  // Last queue snapshot from precomputeSkipCounts — used by prevTrack to build urisToPlay without a fresh fetch
+  const lastQueueSnapshotRef = useRef<{ id: string; name: string; artists: string[] }[]>([]);
   const fadeUpRef = useRef<(vol: number) => Promise<void>>(async () => {});
   const precomputedHighSkipsRef = useRef<number | null>(null);
   const precomputedLowSkipsRef = useRef<number | null>(null);
@@ -304,6 +306,7 @@ function WorkoutInner() {
       if (lowSkips === null && bpm < HIGH_BPM_CUTOFF) lowSkips = i + 1;
       if (highSkips !== null && lowSkips !== null) break;
     }
+    lastQueueSnapshotRef.current = allTracks;
     precomputedHighSkipsRef.current = highSkips;
     precomputedLowSkipsRef.current = lowSkips;
     console.log(`[Precompute] HIGH in ${highSkips ?? "none"} skip(s), LOW in ${lowSkips ?? "none"} skip(s)`);
@@ -876,32 +879,20 @@ function WorkoutInner() {
 
     // Build uris: prevUri first, then current track, then upcoming queue so the
     // forward context survives after prevUri finishes playing naturally.
-    // 300ms delay lets Spotify settle before we snapshot the queue.
-    // If the first fetch returns 0 upcoming tracks, retry once after another 300ms.
-    const fetchQueueUpcoming = async (): Promise<{ id: string }[]> => {
-      const qRes = await fetch("/api/queue-tracks");
-      if (!qRes.ok) return [];
-      const body = await qRes.json();
-      return (body.tracks ?? []).filter(
-        (t: { id: string }) => t.id !== body.currentlyPlayingId && `spotify:track:${t.id}` !== prevUri
-      );
-    };
-
+    // Use the last snapshot stored by precomputeSkipCounts — always ready, no timing issues.
     let urisToPlay: string[] = [prevUri];
-    try {
-      await new Promise(r => setTimeout(r, 300));
-      let upcoming = await fetchQueueUpcoming();
-      if (upcoming.length === 0) {
-        await new Promise(r => setTimeout(r, 300));
-        upcoming = await fetchQueueUpcoming();
-      }
+    const snapshot = lastQueueSnapshotRef.current;
+    if (snapshot.length > 0) {
       const currentId = prevTrackIdRef.current;
+      const upcoming = snapshot.filter(
+        (t) => t.id !== currentId && `spotify:track:${t.id}` !== prevUri
+      );
       const forwardUris = [
         ...(currentId ? [`spotify:track:${currentId}`] : []),
-        ...upcoming.map((t: { id: string }) => `spotify:track:${t.id}`),
+        ...upcoming.map((t) => `spotify:track:${t.id}`),
       ];
       if (forwardUris.length > 0) urisToPlay = [prevUri, ...forwardUris];
-    } catch { /* non-fatal — fall back to single-track */ }
+    }
 
     try {
       console.log(`[prevTrack] PUT /play — device: ${deviceIdRef.current} — ${urisToPlay.length} uri(s):`, urisToPlay);
