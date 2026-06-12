@@ -894,6 +894,7 @@ function WorkoutInner() {
     }
 
     const skipCount = lastSkipCountRef.current;
+    lastSkipCountRef.current = 0;
     const vol = await captureVolumeRef.current();
     setIsTransitioning(true);
     isTransitioningRef.current = true;
