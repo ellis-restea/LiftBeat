@@ -526,7 +526,20 @@ function WorkoutInner() {
           precomputeSkipCountsRef.current().then(() => { lastSkipCountRef.current = 0; skipToTargetBpmRef.current(pendingState); });
         }
       } else {
-        precomputeSkipCountsRef.current();
+        // Responsive mode: precompute first (enriches pool), then check if new song matches state
+        precomputeSkipCountsRef.current().then(() => {
+          const ws = workoutStateRef.current;
+          if (ws === "idle" || ws === "done") return;
+          const currentBpm = trackPoolRef.current.find(p => p.id === newId)?.bpm;
+          if (currentBpm == null) return;
+          const wantHigh = ws === "warmup" || ws === "exercising";
+          const isHigh = currentBpm >= HIGH_BPM_CUTOFF;
+          if (isHigh !== wantHigh) {
+            console.log(`[Responsive/natural] "${data?.item?.name}" is ${isHigh ? "HIGH" : "LOW"} (${currentBpm} BPM) but state is ${ws} — correcting`);
+            lastSkipCountRef.current = 0;
+            skipToTargetBpmRef.current(ws);
+          }
+        });
       }
     }
 
