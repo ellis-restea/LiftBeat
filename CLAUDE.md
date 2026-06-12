@@ -434,3 +434,47 @@ workout-setup/page.tsx:
 Global safe-area-inset note:
 Attempted body { padding-top: max(60px, env(safe-area-inset-top)) } — caused unwanted full-page scroll.
 Reverted. Safe area insets should be applied per-page/per-component, not globally on body.
+
+Session Summary — June 11 2026:
+
+prevTrack back-button bug work (workout/page.tsx):
+
+Context: prevTrack uses PUT /play { uris: [...] } to navigate to a previous song — fundamentally
+different from skipTrack which uses POST /me/player/next. PUT /play can silently fail with a stale
+device ID, and requires an explicit uris array to preserve the forward queue.
+
+Work done this session (started from git revert to 34beb5b in previous session context):
+
+Two targeted fixes applied after the revert:
+  1. PUT /play response checking: capture the response, if it fails re-fetch deviceId and retry once.
+  2. restingBpmTimerRef: store the triggerRestingBpm setTimeout in a ref so prevTrack can cancel it
+     before it fires (prevents the resting-state skip from racing with the back button navigation).
+
+urisToPlay array fix: prevTrack was only sending 1 URI (just prevUri) instead of the full queue.
+  Fixed by fetching /api/queue-tracks inside prevTrack and building:
+  [prevUri, currentlyPlayingTrack, ...upcomingQueue]
+
+Delay+retry approach (commit 6ff138c): Added 300ms delay before queue fetch + one retry if 0
+  upcoming tracks returned. User then immediately replaced this with snapshot approach.
+
+Snapshot approach (commit 35cb995 — final state):
+  Added lastQueueSnapshotRef = useRef<{ id: string; name: string; artists: string[] }[]>([])
+  precomputeSkipCounts now stores allTracks into lastQueueSnapshotRef after every queue fetch.
+  prevTrack reads lastQueueSnapshotRef.current directly to build urisToPlay — no fresh fetch,
+  no delays, no timing race.
+
+*** UNRESOLVED BUGS (to fix next session): ***
+  1. prevTrack not going to the correct previous song — goes to wrong song
+  2. Forward queue not being preserved after prevTrack — Spotify queue is emptied
+
+  Root cause investigation needed:
+  - prevUri is popped from trackHistoryRef — verify trackHistoryRef is being populated correctly
+    (it's pushed in fetchCurrentTrack when a track change is detected)
+  - The snapshot filter logic may be excluding the wrong tracks — check currentId vs currentlyPlayingId
+    in the snapshot at the moment prevTrack fires
+  - PUT /play with uris may silently fail if deviceIdRef.current is stale even with retry
+  - verifyAndCorrectBpm was removed from prevTrack — confirm it's still absent (reintroducing it
+    caused the original "skips to future HIGH BPM song" bug)
+  - The urisToPlay filter: snapshot.filter(t => t.id !== currentId && `spotify:track:${t.id}` !== prevUri)
+    — currentId is prevTrackIdRef.current (the track playing when the button was pressed), not the
+    snapshot's currentlyPlayingId — these may differ if the snapshot is stale
