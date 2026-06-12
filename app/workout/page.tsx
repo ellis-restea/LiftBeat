@@ -93,6 +93,28 @@ function WorkoutInner() {
     return () => clearTimeout(id);
   }, [toastMessage]);
 
+  useEffect(() => {
+    let wakeLock: WakeLockSentinel | null = null;
+
+    const acquire = async () => {
+      try {
+        wakeLock = await navigator.wakeLock.request("screen");
+      } catch {}
+    };
+
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") acquire();
+    };
+
+    acquire();
+    document.addEventListener("visibilitychange", onVisibility);
+
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibility);
+      wakeLock?.release().catch(() => {});
+    };
+  }, []);
+
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const lastCommandRef = useRef<number>(0);
   const progressBarRef = useRef<HTMLDivElement>(null);
