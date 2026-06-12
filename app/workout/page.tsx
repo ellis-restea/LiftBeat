@@ -791,7 +791,7 @@ function WorkoutInner() {
 
   const skipTrack = async () => {
     if (!session?.accessToken) return;
-    lastSkipCountRef.current = 0;
+    lastSkipCountRef.current = 1;
     const vol = await captureVolumeRef.current();
     setIsTransitioning(true);
     isTransitioningRef.current = true;
