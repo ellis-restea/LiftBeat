@@ -88,7 +88,7 @@ function WorkoutInner() {
   const [queueLoaded, setQueueLoaded] = useState(false);
   const [panelDragY, setPanelDragY] = useState(0);
   const [isDraggingPanel, setIsDraggingPanel] = useState(false);
-  const [isPanelDismissing, setIsPanelDismissing] = useState(false);
+  const [isPanelAnimationDone, setIsPanelAnimationDone] = useState(false);
 
   useEffect(() => {
     if (!toastMessage) return;
@@ -639,10 +639,13 @@ function WorkoutInner() {
       panelDragYRef.current = 0;
       setPanelDragY(0);
       setIsDraggingPanel(false);
-      setIsPanelDismissing(false);
+      setIsPanelAnimationDone(false);
       return;
     }
     if (!session?.accessToken) return;
+
+    // After the opening CSS animation completes, cancel it so inline transforms take over.
+    const animDoneTimer = setTimeout(() => setIsPanelAnimationDone(true), 290);
 
     let cancelled = false;
 
@@ -703,7 +706,7 @@ function WorkoutInner() {
 
     fetchQueue();
     const id = setInterval(fetchQueue, 5000);
-    return () => { cancelled = true; clearInterval(id); };
+    return () => { cancelled = true; clearInterval(id); clearTimeout(animDoneTimer); };
   }, [showQueuePanel, session?.accessToken]);
 
   const handleStart = async () => {
@@ -1021,10 +1024,9 @@ function WorkoutInner() {
     if (isPanelDismissingRef.current) return;
     isPanelDismissingRef.current = true;
     isPanelDraggingRef.current = false;
-    // Render 1: enable transition (turn off drag-mode) + switch to ease-in curve
+    // Render 1: enable transition (isDraggingPanel → false, value unchanged)
     setIsDraggingPanel(false);
-    setIsPanelDismissing(true);
-    // Render 2 (after double-rAF): change value so CSS transition fires
+    // Render 2: value changes — CSS transition fires from current position to off-screen
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
         setPanelDragY(window.innerHeight);
@@ -1260,14 +1262,11 @@ function WorkoutInner() {
         >
           <div
             className="w-full bg-[#0f1117] border-t border-white/10 rounded-t-3xl max-h-[80vh] flex flex-col"
-            style={{
-              animation: 'slideUpPanel 280ms cubic-bezier(0.32, 0.72, 0, 1) forwards',
+            style={isPanelAnimationDone ? {
               transform: `translateY(${panelDragY}px)`,
-              transition: isDraggingPanel
-                ? 'none'
-                : isPanelDismissing
-                ? 'transform 350ms ease-in'
-                : 'transform 300ms cubic-bezier(0.32, 0.72, 0, 1)',
+              transition: isDraggingPanel ? 'none' : 'transform 300ms cubic-bezier(0.32, 0.72, 0, 1)',
+            } : {
+              animation: 'slideUpPanel 280ms cubic-bezier(0.32, 0.72, 0, 1) forwards',
             }}
             onClick={e => e.stopPropagation()}
           >
