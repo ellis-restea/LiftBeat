@@ -94,6 +94,14 @@ function WorkoutInner() {
   }, [toastMessage]);
 
   useEffect(() => {
+    const preventSwipeBack = (e: TouchEvent) => {
+      if (e.touches[0].clientX < 30) e.preventDefault();
+    };
+    document.addEventListener("touchstart", preventSwipeBack, { passive: false });
+    return () => document.removeEventListener("touchstart", preventSwipeBack);
+  }, []);
+
+  useEffect(() => {
     let wakeLock: WakeLockSentinel | null = null;
 
     const acquire = async () => {

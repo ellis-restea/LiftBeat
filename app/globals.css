@@ -2,6 +2,13 @@
 
 html, body {
   background-color: #111116;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+input, textarea {
+  -webkit-user-select: text;
+  user-select: text;
 }
 
 /* Collapses the rest timer on mobile so it takes no layout space when not resting.
