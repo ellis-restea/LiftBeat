@@ -1027,6 +1027,12 @@ function WorkoutInner() {
     seekTo(getProgressFromX(e.clientX));
   };
 
+  // Cancel resets drag state without seeking — fired when browser reclaims touch for scrolling
+  const handleProgressPointerCancel = () => {
+    isDraggingRef.current = false;
+    setIsDragging(false);
+  };
+
   if (loading) return <LoadingScreen />;
 
   if (exercises.length === 0)
@@ -1334,10 +1340,11 @@ function WorkoutInner() {
             <div
               ref={progressBarRef}
               className="w-full bg-gray-700 rounded-full h-[7px] md:h-[10px] mb-2 cursor-pointer relative group"
+              style={{ touchAction: 'none' }}
               onPointerDown={handleProgressPointerDown}
               onPointerMove={handleProgressPointerMove}
               onPointerUp={handleProgressPointerUp}
-              onPointerCancel={handleProgressPointerUp}
+              onPointerCancel={handleProgressPointerCancel}
             >
               <div
                 className="bg-white rounded-full h-[7px] md:h-[10px] pointer-events-none"
