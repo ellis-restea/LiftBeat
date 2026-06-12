@@ -88,6 +88,7 @@ function WorkoutInner() {
   const [queueLoaded, setQueueLoaded] = useState(false);
   const [panelDragY, setPanelDragY] = useState(0);
   const [isDraggingPanel, setIsDraggingPanel] = useState(false);
+  const [isPanelDismissing, setIsPanelDismissing] = useState(false);
 
   useEffect(() => {
     if (!toastMessage) return;
@@ -638,6 +639,7 @@ function WorkoutInner() {
       panelDragYRef.current = 0;
       setPanelDragY(0);
       setIsDraggingPanel(false);
+      setIsPanelDismissing(false);
       return;
     }
     if (!session?.accessToken) return;
@@ -1015,18 +1017,28 @@ function WorkoutInner() {
     setPanelDragY(delta);
   };
 
+  const dismissQueuePanel = () => {
+    if (isPanelDismissingRef.current) return;
+    isPanelDismissingRef.current = true;
+    isPanelDraggingRef.current = false;
+    // Render 1: enable transition (turn off drag-mode) + switch to ease-in curve
+    setIsDraggingPanel(false);
+    setIsPanelDismissing(true);
+    // Render 2 (after double-rAF): change value so CSS transition fires
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        setPanelDragY(window.innerHeight);
+        setTimeout(() => setShowQueuePanel(false), 350);
+      });
+    });
+  };
+
   const handlePanelHandleUp = () => {
     if (!isPanelDraggingRef.current) return;
     isPanelDraggingRef.current = false;
     if (panelDragYRef.current > 100) {
-      // Enable transition (setIsDraggingPanel false), then slide off-screen
-      isPanelDismissingRef.current = true;
-      setIsDraggingPanel(false);
-      setPanelDragY(window.innerHeight);
-      setTimeout(() => setShowQueuePanel(false), 320);
+      dismissQueuePanel();
     } else {
-      // Step 1: render with transition enabled (isDraggingPanel → false)
-      // Step 2: double-rAF so the transition is live before transform changes
       setIsDraggingPanel(false);
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
@@ -1244,7 +1256,7 @@ function WorkoutInner() {
         <div
           className="fixed inset-0 z-[60] flex items-end"
           style={{ backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', background: 'rgba(0,0,0,0.65)' }}
-          onClick={() => setShowQueuePanel(false)}
+          onClick={() => dismissQueuePanel()}
         >
           <div
             className="w-full bg-[#0f1117] border-t border-white/10 rounded-t-3xl max-h-[80vh] flex flex-col"
@@ -1253,8 +1265,8 @@ function WorkoutInner() {
               transform: `translateY(${panelDragY}px)`,
               transition: isDraggingPanel
                 ? 'none'
-                : isPanelDismissingRef.current
-                ? 'transform 320ms ease-in'
+                : isPanelDismissing
+                ? 'transform 350ms ease-in'
                 : 'transform 300ms cubic-bezier(0.32, 0.72, 0, 1)',
             }}
             onClick={e => e.stopPropagation()}
