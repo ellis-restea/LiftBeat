@@ -877,13 +877,24 @@ function WorkoutInner() {
     isTransitioningRef.current = true;
     lastCommandRef.current = Date.now();
 
+    // Fetch the currently-playing track ID fresh so urisToPlay is built against actual current state.
+    let currentId: string | null = null;
+    try {
+      const cpRes = await spotifyFetch("https://api.spotify.com/v1/me/player/currently-playing", {
+        headers: { Authorization: `Bearer ${session.accessToken}` },
+      });
+      if (cpRes.ok && cpRes.status !== 204) {
+        const cpData = await cpRes.json();
+        currentId = cpData?.item?.id ?? null;
+      }
+    } catch { /* non-fatal */ }
+
     // Build uris: prevUri first, then current track, then upcoming queue so the
     // forward context survives after prevUri finishes playing naturally.
     // Use the last snapshot stored by precomputeSkipCounts — always ready, no timing issues.
     let urisToPlay: string[] = [prevUri];
     const snapshot = lastQueueSnapshotRef.current;
     if (snapshot.length > 0) {
-      const currentId = prevTrackIdRef.current;
       const upcoming = snapshot.filter(
         (t) => t.id !== currentId && `spotify:track:${t.id}` !== prevUri
       );
@@ -927,7 +938,7 @@ function WorkoutInner() {
           await spotifyFetch(`https://api.spotify.com/v1/me/player/play?device_id=${deviceIdRef.current}`, {
             method: "PUT",
             headers: { Authorization: `Bearer ${session.accessToken}`, "Content-Type": "application/json" },
-            body: JSON.stringify({ uris: [prevUri] }),
+            body: JSON.stringify({ uris: urisToPlay }),
           });
         }
       }
