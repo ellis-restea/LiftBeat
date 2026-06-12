@@ -329,7 +329,7 @@ function WorkoutInner() {
       return false;
     }
     console.log(`[Skip] state=${state} target=${bucket} — firing ${skipCount} skip(s)`);
-    lastSkipCountRef.current = skipCount;
+    lastSkipCountRef.current += skipCount;
     await withMuteTransition(async () => {
       lastCommandRef.current = Date.now();
       for (let i = 0; i < skipCount; i++) {
@@ -450,6 +450,7 @@ function WorkoutInner() {
         } else {
           // LOW or unknown — precompute then skip to HIGH; withMuteTransition sees vol=0, restores correctly
           await precomputeSkipCountsRef.current();
+          lastSkipCountRef.current = 0;
           const switched = await skipToTargetBpmRef.current("warmup");
           if (!switched) await fadeUpRef.current(originalVolumeRef.current);
         }
@@ -492,7 +493,7 @@ function WorkoutInner() {
           precomputeSkipCountsRef.current();
         } else {
           console.log(`[Chill/natural] ✗ Wrong category — precomputing then skipping to ${requiredCat}`);
-          precomputeSkipCountsRef.current().then(() => skipToTargetBpmRef.current(pendingState));
+          precomputeSkipCountsRef.current().then(() => { lastSkipCountRef.current = 0; skipToTargetBpmRef.current(pendingState); });
         }
       } else {
         precomputeSkipCountsRef.current();
@@ -559,6 +560,7 @@ function WorkoutInner() {
         clearInterval(timerRef.current!);
         setWorkoutState("exercising");
         if (djModeRef.current === "responsive") {
+          lastSkipCountRef.current = 0;
           skipToTargetBpmRef.current("exercising");
         } else {
           pendingBpmStateRef.current = "exercising";
@@ -674,6 +676,7 @@ function WorkoutInner() {
       if (restingBpmTimerRef.current) clearTimeout(restingBpmTimerRef.current);
       restingBpmTimerRef.current = setTimeout(() => {
         restingBpmTimerRef.current = null;
+        lastSkipCountRef.current = 0;
         skipToTargetBpmRef.current("resting");
       }, 500);
     } else {
@@ -788,6 +791,7 @@ function WorkoutInner() {
 
   const skipTrack = async () => {
     if (!session?.accessToken) return;
+    lastSkipCountRef.current = 0;
     const vol = await captureVolumeRef.current();
     setIsTransitioning(true);
     isTransitioningRef.current = true;
