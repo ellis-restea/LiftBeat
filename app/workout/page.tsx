@@ -120,6 +120,8 @@ function WorkoutInner() {
   const restingBpmTimerRef = useRef<NodeJS.Timeout | null>(null);
   // Last queue snapshot from precomputeSkipCounts — used by prevTrack to build urisToPlay without a fresh fetch
   const lastQueueSnapshotRef = useRef<{ id: string; name: string; artists: string[] }[]>([]);
+  // How many /next skips the last skipToTargetBpm call fired — prevTrack fires /previous this many times
+  const lastSkipCountRef = useRef<number>(0);
   const fadeUpRef = useRef<(vol: number) => Promise<void>>(async () => {});
   const precomputedHighSkipsRef = useRef<number | null>(null);
   const precomputedLowSkipsRef = useRef<number | null>(null);
@@ -327,6 +329,7 @@ function WorkoutInner() {
       return false;
     }
     console.log(`[Skip] state=${state} target=${bucket} — firing ${skipCount} skip(s)`);
+    lastSkipCountRef.current = skipCount;
     await withMuteTransition(async () => {
       lastCommandRef.current = Date.now();
       for (let i = 0; i < skipCount; i++) {
@@ -848,104 +851,36 @@ function WorkoutInner() {
 
   const prevTrack = async () => {
     if (!session?.accessToken) return;
-    const history = trackHistoryRef.current;
-    if (history.length === 0) return;
+    if (!lastSkipCountRef.current) return;
 
-    if (!deviceIdRef.current) {
-      try {
-        const dr = await spotifyFetch("https://api.spotify.com/v1/me/player/devices", {
-          headers: { Authorization: `Bearer ${session.accessToken}` },
-        });
-        if (dr.ok) {
-          const { devices } = await dr.json();
-          const d = devices?.find((d: any) => d.is_active) ?? devices?.[0];
-          if (d) deviceIdRef.current = d.id;
-        }
-      } catch { /* non-fatal */ }
-    }
-    if (!deviceIdRef.current) return;
-
-    // Cancel any pending resting-BPM skip so it doesn't fire mid-transition and override prevTrack
+    // Cancel any pending resting-BPM skip so it doesn't race with this call
     if (restingBpmTimerRef.current) {
       clearTimeout(restingBpmTimerRef.current);
       restingBpmTimerRef.current = null;
     }
 
-    const prevUri = history.pop()!;
+    const skipCount = lastSkipCountRef.current;
     const vol = await captureVolumeRef.current();
     setIsTransitioning(true);
     isTransitioningRef.current = true;
-    lastCommandRef.current = Date.now();
+    lastCommandRef.current = Date.now() - 1200;
 
-    // Fetch the currently-playing track ID fresh so urisToPlay is built against actual current state.
-    let currentId: string | null = null;
     try {
-      const cpRes = await spotifyFetch("https://api.spotify.com/v1/me/player/currently-playing", {
+      await spotifyFetch(`https://api.spotify.com/v1/me/player/volume?volume_percent=0`, {
+        method: "PUT",
         headers: { Authorization: `Bearer ${session.accessToken}` },
       });
-      if (cpRes.ok && cpRes.status !== 204) {
-        const cpData = await cpRes.json();
-        currentId = cpData?.item?.id ?? null;
-      }
-    } catch { /* non-fatal */ }
-
-    // Build uris: prevUri first, then current track, then upcoming queue so the
-    // forward context survives after prevUri finishes playing naturally.
-    // Use the last snapshot stored by precomputeSkipCounts — always ready, no timing issues.
-    let urisToPlay: string[] = [prevUri];
-    const snapshot = lastQueueSnapshotRef.current;
-    if (snapshot.length > 0) {
-      const upcoming = snapshot.filter(
-        (t) => t.id !== currentId && `spotify:track:${t.id}` !== prevUri
-      );
-      const forwardUris = [
-        ...(currentId ? [`spotify:track:${currentId}`] : []),
-        ...upcoming.map((t) => `spotify:track:${t.id}`),
-      ];
-      if (forwardUris.length > 0) urisToPlay = [prevUri, ...forwardUris];
-    }
-
-    try {
-      console.log(`[prevTrack] PUT /play — device: ${deviceIdRef.current} — ${urisToPlay.length} uri(s):`, urisToPlay);
-      const [, playRes] = await Promise.all([
-        spotifyFetch(`https://api.spotify.com/v1/me/player/volume?volume_percent=0`, {
-          method: "PUT",
+      console.log(`[prevTrack] firing ${skipCount} /previous call(s)`);
+      for (let i = 0; i < skipCount; i++) {
+        await spotifyFetch("https://api.spotify.com/v1/me/player/previous", {
+          method: "POST",
           headers: { Authorization: `Bearer ${session.accessToken}` },
-        }),
-        spotifyFetch(`https://api.spotify.com/v1/me/player/play?device_id=${deviceIdRef.current}`, {
-          method: "PUT",
-          headers: { Authorization: `Bearer ${session.accessToken}`, "Content-Type": "application/json" },
-          body: JSON.stringify({ uris: urisToPlay }),
-        }),
-      ]);
-
-      console.log(`[prevTrack] PUT /play response: ${playRes.status} ${playRes.ok ? "OK" : "FAILED"}`);
-
-      // PUT /play returns 204 on success. On failure re-fetch the active device and retry once.
-      if (!playRes.ok && playRes.status !== 429) {
-        console.log(`[prevTrack] PUT /play failed (${playRes.status}) — re-fetching device and retrying`);
-        try {
-          const dr = await spotifyFetch("https://api.spotify.com/v1/me/player/devices", {
-            headers: { Authorization: `Bearer ${session.accessToken}` },
-          });
-          if (dr.ok) {
-            const { devices } = await dr.json();
-            const d = devices?.find((d: any) => d.is_active) ?? devices?.[0];
-            if (d) deviceIdRef.current = d.id;
-          }
-        } catch { /* non-fatal */ }
-        if (deviceIdRef.current) {
-          await spotifyFetch(`https://api.spotify.com/v1/me/player/play?device_id=${deviceIdRef.current}`, {
-            method: "PUT",
-            headers: { Authorization: `Bearer ${session.accessToken}`, "Content-Type": "application/json" },
-            body: JSON.stringify({ uris: urisToPlay }),
-          });
-        }
+        });
       }
 
       await new Promise(r => setTimeout(r, 500));
 
-      // Quick poll to display new track info while BPM verification/fade-up are still in progress
+      // Quick poll to display new track info while fade-up is still in progress
       const quickRes = await spotifyFetch("https://api.spotify.com/v1/me/player/currently-playing", {
         headers: { Authorization: `Bearer ${session.accessToken}` },
       });
