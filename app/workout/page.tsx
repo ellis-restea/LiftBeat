@@ -164,6 +164,7 @@ function WorkoutInner() {
   // In Chill mode, state-change skips are deferred until the next natural track end.
   const pendingBpmStateRef = useRef<WorkoutState | null>(null);
   const isPanelDraggingRef = useRef(false);
+  const isPanelDismissingRef = useRef(false);
   const panelDragStartYRef = useRef(0);
   const panelDragYRef = useRef(0);
 
@@ -632,6 +633,7 @@ function WorkoutInner() {
       setQueueTracks([]);
       setQueueLoaded(false);
       isPanelDraggingRef.current = false;
+      isPanelDismissingRef.current = false;
       panelDragYRef.current = 0;
       setPanelDragY(0);
       return;
@@ -1014,7 +1016,10 @@ function WorkoutInner() {
     if (!isPanelDraggingRef.current) return;
     isPanelDraggingRef.current = false;
     if (panelDragYRef.current > 100) {
-      setShowQueuePanel(false);
+      // Slide the rest of the way off-screen, then unmount
+      isPanelDismissingRef.current = true;
+      setPanelDragY(window.innerHeight);
+      setTimeout(() => setShowQueuePanel(false), 320);
     } else {
       setPanelDragY(0);
       panelDragYRef.current = 0;
@@ -1235,7 +1240,11 @@ function WorkoutInner() {
             style={{
               animation: 'slideUpPanel 280ms cubic-bezier(0.32, 0.72, 0, 1) forwards',
               transform: `translateY(${panelDragY}px)`,
-              transition: isPanelDraggingRef.current ? 'none' : 'transform 300ms ease',
+              transition: isPanelDraggingRef.current
+                ? 'none'
+                : isPanelDismissingRef.current
+                ? 'transform 320ms ease-in'
+                : 'transform 300ms cubic-bezier(0.32, 0.72, 0, 1)',
             }}
             onClick={e => e.stopPropagation()}
           >
