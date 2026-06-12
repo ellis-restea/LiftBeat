@@ -86,6 +86,7 @@ function WorkoutInner() {
   const [showQueuePanel, setShowQueuePanel] = useState(false);
   const [queueTracks, setQueueTracks] = useState<TrackBpm[]>([]);
   const [queueLoaded, setQueueLoaded] = useState(false);
+  const [panelDragY, setPanelDragY] = useState(0);
 
   useEffect(() => {
     if (!toastMessage) return;
@@ -162,6 +163,9 @@ function WorkoutInner() {
   const djModeRef = useRef<DjMode>("responsive");
   // In Chill mode, state-change skips are deferred until the next natural track end.
   const pendingBpmStateRef = useRef<WorkoutState | null>(null);
+  const isPanelDraggingRef = useRef(false);
+  const panelDragStartYRef = useRef(0);
+  const panelDragYRef = useRef(0);
 
   const currentExercise = exercises[currentExerciseIndex];
   const totalSets = exercises.reduce((acc, ex) => acc + ex.sets, 0);
@@ -627,6 +631,9 @@ function WorkoutInner() {
     if (!showQueuePanel) {
       setQueueTracks([]);
       setQueueLoaded(false);
+      isPanelDraggingRef.current = false;
+      panelDragYRef.current = 0;
+      setPanelDragY(0);
       return;
     }
     if (!session?.accessToken) return;
@@ -990,6 +997,30 @@ function WorkoutInner() {
     router.push("/dashboard");
   };
 
+  const handlePanelHandleDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    e.currentTarget.setPointerCapture(e.pointerId);
+    panelDragStartYRef.current = e.clientY;
+    isPanelDraggingRef.current = true;
+  };
+
+  const handlePanelHandleMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!isPanelDraggingRef.current) return;
+    const delta = Math.max(0, e.clientY - panelDragStartYRef.current);
+    panelDragYRef.current = delta;
+    setPanelDragY(delta);
+  };
+
+  const handlePanelHandleUp = () => {
+    if (!isPanelDraggingRef.current) return;
+    isPanelDraggingRef.current = false;
+    if (panelDragYRef.current > 100) {
+      setShowQueuePanel(false);
+    } else {
+      setPanelDragY(0);
+      panelDragYRef.current = 0;
+    }
+  };
+
   const getProgressFromX = (clientX: number): number => {
     if (!progressBarRef.current) return 0;
     const rect = progressBarRef.current.getBoundingClientRect();
@@ -1201,29 +1232,29 @@ function WorkoutInner() {
         >
           <div
             className="w-full bg-[#0f1117] border-t border-white/10 rounded-t-3xl max-h-[80vh] flex flex-col"
-            style={{ animation: 'slideUpPanel 280ms cubic-bezier(0.32, 0.72, 0, 1) forwards' }}
+            style={{
+              animation: 'slideUpPanel 280ms cubic-bezier(0.32, 0.72, 0, 1) forwards',
+              transform: `translateY(${panelDragY}px)`,
+              transition: isPanelDraggingRef.current ? 'none' : 'transform 300ms ease',
+            }}
             onClick={e => e.stopPropagation()}
           >
-            {/* Drag handle */}
-            <div className="flex justify-center pt-3 pb-1 shrink-0">
+            {/* Drag handle — grab here to dismiss */}
+            <div
+              className="flex justify-center pt-3 pb-3 shrink-0 cursor-grab active:cursor-grabbing"
+              style={{ touchAction: 'none' }}
+              onPointerDown={handlePanelHandleDown}
+              onPointerMove={handlePanelHandleMove}
+              onPointerUp={handlePanelHandleUp}
+              onPointerCancel={handlePanelHandleUp}
+            >
               <div className="w-10 h-1 rounded-full bg-white/20" />
             </div>
 
             {/* Header */}
-            <div className="flex justify-between items-start px-6 py-3 shrink-0">
-              <div>
-                <h3 className="text-white font-bold text-lg leading-tight">Up Next</h3>
-                <p className="text-[#64748b] text-xs mt-0.5">up to 20 songs</p>
-              </div>
-              <button
-                onClick={() => setShowQueuePanel(false)}
-                className="text-gray-400 hover:text-white transition-colors p-1 -mr-1"
-                aria-label="Close"
-              >
-                <svg viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
-                  <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
-                </svg>
-              </button>
+            <div className="px-6 pb-3 shrink-0">
+              <h3 className="text-white font-bold text-lg leading-tight">Up Next</h3>
+              <p className="text-[#64748b] text-xs mt-0.5">up to 20 songs</p>
             </div>
 
             {/* Track list */}
