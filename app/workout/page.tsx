@@ -87,6 +87,7 @@ function WorkoutInner() {
   const [queueTracks, setQueueTracks] = useState<TrackBpm[]>([]);
   const [queueLoaded, setQueueLoaded] = useState(false);
   const [panelDragY, setPanelDragY] = useState(0);
+  const [isDraggingPanel, setIsDraggingPanel] = useState(false);
 
   useEffect(() => {
     if (!toastMessage) return;
@@ -636,6 +637,7 @@ function WorkoutInner() {
       isPanelDismissingRef.current = false;
       panelDragYRef.current = 0;
       setPanelDragY(0);
+      setIsDraggingPanel(false);
       return;
     }
     if (!session?.accessToken) return;
@@ -1003,6 +1005,7 @@ function WorkoutInner() {
     e.currentTarget.setPointerCapture(e.pointerId);
     panelDragStartYRef.current = e.clientY;
     isPanelDraggingRef.current = true;
+    setIsDraggingPanel(true);
   };
 
   const handlePanelHandleMove = (e: React.PointerEvent<HTMLDivElement>) => {
@@ -1016,13 +1019,21 @@ function WorkoutInner() {
     if (!isPanelDraggingRef.current) return;
     isPanelDraggingRef.current = false;
     if (panelDragYRef.current > 100) {
-      // Slide the rest of the way off-screen, then unmount
+      // Enable transition (setIsDraggingPanel false), then slide off-screen
       isPanelDismissingRef.current = true;
+      setIsDraggingPanel(false);
       setPanelDragY(window.innerHeight);
       setTimeout(() => setShowQueuePanel(false), 320);
     } else {
-      setPanelDragY(0);
-      panelDragYRef.current = 0;
+      // Step 1: render with transition enabled (isDraggingPanel → false)
+      // Step 2: double-rAF so the transition is live before transform changes
+      setIsDraggingPanel(false);
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          setPanelDragY(0);
+          panelDragYRef.current = 0;
+        });
+      });
     }
   };
 
@@ -1240,7 +1251,7 @@ function WorkoutInner() {
             style={{
               animation: 'slideUpPanel 280ms cubic-bezier(0.32, 0.72, 0, 1) forwards',
               transform: `translateY(${panelDragY}px)`,
-              transition: isPanelDraggingRef.current
+              transition: isDraggingPanel
                 ? 'none'
                 : isPanelDismissingRef.current
                 ? 'transform 320ms ease-in'
@@ -1248,22 +1259,22 @@ function WorkoutInner() {
             }}
             onClick={e => e.stopPropagation()}
           >
-            {/* Drag handle — grab here to dismiss */}
+            {/* Draggable top zone: handle bar + header */}
             <div
-              className="flex justify-center pt-3 pb-3 shrink-0 cursor-grab active:cursor-grabbing"
+              className="shrink-0 cursor-grab active:cursor-grabbing"
               style={{ touchAction: 'none' }}
               onPointerDown={handlePanelHandleDown}
               onPointerMove={handlePanelHandleMove}
               onPointerUp={handlePanelHandleUp}
               onPointerCancel={handlePanelHandleUp}
             >
-              <div className="w-10 h-1 rounded-full bg-white/20" />
-            </div>
-
-            {/* Header */}
-            <div className="px-6 pb-3 shrink-0">
-              <h3 className="text-white font-bold text-lg leading-tight">Up Next</h3>
-              <p className="text-[#64748b] text-xs mt-0.5">up to 20 songs</p>
+              <div className="flex justify-center pt-3 pb-2">
+                <div className="w-10 h-1 rounded-full bg-white/20" />
+              </div>
+              <div className="px-6 pb-3">
+                <h3 className="text-white font-bold text-lg leading-tight">Up Next</h3>
+                <p className="text-[#64748b] text-xs mt-0.5">up to 20 songs</p>
+              </div>
             </div>
 
             {/* Track list */}
