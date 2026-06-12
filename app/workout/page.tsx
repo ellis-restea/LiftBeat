@@ -866,6 +866,9 @@ function WorkoutInner() {
           currentTrackRef.current = quickData.item;
           setCurrentTrack(quickData.item);
           setIsPlaying(quickData.is_playing ?? false);
+          setSongPosition(quickData.progress_ms || 0);
+          setSongDuration(quickData.item.duration_ms || 0);
+          setSongProgress(quickData.item.duration_ms ? Math.round((quickData.progress_ms / quickData.item.duration_ms) * 100) : 0);
         }
       }
 
@@ -938,6 +941,9 @@ function WorkoutInner() {
           currentTrackRef.current = quickData.item;
           setCurrentTrack(quickData.item);
           setIsPlaying(quickData.is_playing ?? false);
+          setSongPosition(quickData.progress_ms || 0);
+          setSongDuration(quickData.item.duration_ms || 0);
+          setSongProgress(quickData.item.duration_ms ? Math.round((quickData.progress_ms / quickData.item.duration_ms) * 100) : 0);
         }
       }
 
@@ -1314,7 +1320,11 @@ function WorkoutInner() {
             )}
           </div>
 
-          <div className={`text-center transition-opacity duration-300 ${isTransitioning ? "opacity-30 animate-pulse" : ""}`}>
+          <div
+            key={currentTrack?.id ?? "no-track"}
+            className={`text-center transition-opacity duration-300 ${isTransitioning ? "opacity-30 animate-pulse" : ""}`}
+            style={{ animation: 'liftfade 250ms ease forwards' }}
+          >
             <p className="font-semibold text-base md:text-lg">{currentTrack?.name || "No track playing"}</p>
             <p className="text-gray-400 text-sm">{currentTrack?.artists?.[0]?.name}</p>
           </div>
@@ -1323,14 +1333,14 @@ function WorkoutInner() {
           <div className="w-full select-none">
             <div
               ref={progressBarRef}
-              className="w-full bg-gray-700 rounded-full h-1 md:h-1.5 mb-2 cursor-pointer relative group"
+              className="w-full bg-gray-700 rounded-full h-[7px] md:h-[10px] mb-2 cursor-pointer relative group"
               onPointerDown={handleProgressPointerDown}
               onPointerMove={handleProgressPointerMove}
               onPointerUp={handleProgressPointerUp}
               onPointerCancel={handleProgressPointerUp}
             >
               <div
-                className="bg-white rounded-full h-1 md:h-1.5 pointer-events-none"
+                className="bg-white rounded-full h-[7px] md:h-[10px] pointer-events-none"
                 style={{ width: `${displayProgress}%` }}
               />
               <div
