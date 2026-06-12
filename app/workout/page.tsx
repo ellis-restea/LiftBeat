@@ -1443,7 +1443,7 @@ function WorkoutInner() {
               opacity: workoutState === "idle" && spotifyPlaying !== true ? 1 : 0,
               transition: 'opacity 400ms ease',
             }}
-            className="text-center text-gray-500 text-xs pointer-events-none -mt-2"
+            className="text-center text-gray-500 text-xs pointer-events-none -mt-4 mb-2"
           >
             Play any playlist in Spotify, then come back
           </p>
