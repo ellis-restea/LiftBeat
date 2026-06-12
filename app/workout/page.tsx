@@ -876,21 +876,31 @@ function WorkoutInner() {
 
     // Build uris: prevUri first, then current track, then upcoming queue so the
     // forward context survives after prevUri finishes playing naturally.
+    // 300ms delay lets Spotify settle before we snapshot the queue.
+    // If the first fetch returns 0 upcoming tracks, retry once after another 300ms.
+    const fetchQueueUpcoming = async (): Promise<{ id: string }[]> => {
+      const qRes = await fetch("/api/queue-tracks");
+      if (!qRes.ok) return [];
+      const body = await qRes.json();
+      return (body.tracks ?? []).filter(
+        (t: { id: string }) => t.id !== body.currentlyPlayingId && `spotify:track:${t.id}` !== prevUri
+      );
+    };
+
     let urisToPlay: string[] = [prevUri];
     try {
-      const qRes = await fetch("/api/queue-tracks");
-      if (qRes.ok) {
-        const body = await qRes.json();
-        const currentId = prevTrackIdRef.current;
-        const upcoming: { id: string }[] = (body.tracks ?? []).filter(
-          (t: { id: string }) => t.id !== body.currentlyPlayingId && `spotify:track:${t.id}` !== prevUri
-        );
-        const forwardUris = [
-          ...(currentId ? [`spotify:track:${currentId}`] : []),
-          ...upcoming.map((t: { id: string }) => `spotify:track:${t.id}`),
-        ];
-        if (forwardUris.length > 0) urisToPlay = [prevUri, ...forwardUris];
+      await new Promise(r => setTimeout(r, 300));
+      let upcoming = await fetchQueueUpcoming();
+      if (upcoming.length === 0) {
+        await new Promise(r => setTimeout(r, 300));
+        upcoming = await fetchQueueUpcoming();
       }
+      const currentId = prevTrackIdRef.current;
+      const forwardUris = [
+        ...(currentId ? [`spotify:track:${currentId}`] : []),
+        ...upcoming.map((t: { id: string }) => `spotify:track:${t.id}`),
+      ];
+      if (forwardUris.length > 0) urisToPlay = [prevUri, ...forwardUris];
     } catch { /* non-fatal — fall back to single-track */ }
 
     try {
