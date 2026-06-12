@@ -869,11 +869,29 @@ function WorkoutInner() {
     }
 
     const prevUri = history.pop()!;
-    const urisToPlay = [prevUri];
     const vol = await captureVolumeRef.current();
     setIsTransitioning(true);
     isTransitioningRef.current = true;
     lastCommandRef.current = Date.now();
+
+    // Build uris: prevUri first, then current track, then upcoming queue so the
+    // forward context survives after prevUri finishes playing naturally.
+    let urisToPlay: string[] = [prevUri];
+    try {
+      const qRes = await fetch("/api/queue-tracks");
+      if (qRes.ok) {
+        const body = await qRes.json();
+        const currentId = prevTrackIdRef.current;
+        const upcoming: { id: string }[] = (body.tracks ?? []).filter(
+          (t: { id: string }) => t.id !== body.currentlyPlayingId && `spotify:track:${t.id}` !== prevUri
+        );
+        const forwardUris = [
+          ...(currentId ? [`spotify:track:${currentId}`] : []),
+          ...upcoming.map((t: { id: string }) => `spotify:track:${t.id}`),
+        ];
+        if (forwardUris.length > 0) urisToPlay = [prevUri, ...forwardUris];
+      }
+    } catch { /* non-fatal — fall back to single-track */ }
 
     try {
       console.log(`[prevTrack] PUT /play — device: ${deviceIdRef.current} — ${urisToPlay.length} uri(s):`, urisToPlay);
