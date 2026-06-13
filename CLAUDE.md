@@ -533,3 +533,34 @@ Current state: muting still not working reliably on manual skips. Root cause unc
   Possible remaining causes: Spotify volume API silently returning non-200 on some devices,
   rate limiting on the volume endpoint, or Spotify processing the skip before the mute lands
   despite the sequential await.
+
+Session Summary — June 13 2026:
+
+Mute-during-skip debugging — added verbose console logs (workout/page.tsx):
+
+Goal: determine why the manual-skip mute flow (flat single-mute pattern from June 12) still
+  doesn't reliably silence audio during skips. Root cause has not yet been confirmed.
+
+What was added (commit fb30f13):
+  skipTrack:
+    - Logs captured vol before mute ("captured vol=X")
+    - Captures and logs HTTP status of the mute PUT ("🔇 mute PUT → status=X")
+    - Captures and logs HTTP status of /next POST ("⏭ /next POST → status=X")
+    - Logs landed track name + BPM from quick poll ("🎵 landed: ... bpm=X")
+    - Logs BPM check result: wantHigh, inPool.bpm, whether correction fires
+    - Logs each correction skip's status ("correction skip 1/N → status=X")
+    - Logs "calling fadeUp(X)" before fade begins
+    - Logs emergency restore trigger if volumeRestored=false in finally
+
+  prevTrack:
+    - Same pattern: mute status, each /previous status, landed track/BPM, BPM check, fadeUp call
+
+  fadeUp:
+    - Logs "🔊 starting fade to vol=X"
+    - Logs each of the 5 steps: "step N/5 → vol=Y status=Z"
+    - Logs "✅ done" on completion
+
+Next step: reproduce the mute bug with DevTools open, paste the console output.
+  The HTTP status codes on the mute PUT and each fadeUp step will identify the failure point.
+  Expected: all statuses = 204 (Spotify volume API returns 204 on success, no body).
+  If mute PUT returns 403/404/429 the mute is silently failing before the skip even fires.
