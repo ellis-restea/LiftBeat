@@ -888,25 +888,37 @@ function WorkoutInner() {
         }
       }
 
-      // Chill mode: manual skip acts as the trigger — clear the deferred state now so
-      // fetchCurrentTrack won't fire it again. Log the decision before verifyAndCorrectBpm runs.
-      if (djModeRef.current === "chill") {
-        const ws = workoutStateRef.current;
+      // Chill mode: manual skip is the trigger — clear deferred state
+      if (djModeRef.current === "chill") pendingBpmStateRef.current = null;
+
+      // BPM correction — volume is still 0 here, so correction skips are silent
+      const ws = workoutStateRef.current;
+      if (ws !== "idle" && ws !== "done" && landedTrackId) {
         const wantHigh = ws === "warmup" || ws === "exercising";
-        const requiredCat = wantHigh ? "HIGH" : "LOW";
-        const landedBpm = landedTrackId ? trackPoolRef.current.find(p => p.id === landedTrackId)?.bpm : null;
-        const landedCat = landedBpm == null ? "UNKNOWN" : landedBpm >= HIGH_BPM_CUTOFF ? "HIGH" : "LOW";
-        console.log(`[Chill/skip] state=${ws} requires ${requiredCat} | landed bpm=${landedBpm ?? "?"} (${landedCat})`);
-        if (landedBpm != null && landedCat === requiredCat) {
-          console.log(`[Chill/skip] ✓ Already correct BPM — clearing pending, no additional skip`);
-        } else {
-          console.log(`[Chill/skip] ✗ Wrong category — verifyAndCorrectBpm will correct`);
+        const inPool = trackPoolRef.current.find(p => p.id === landedTrackId);
+        if (inPool?.bpm != null) {
+          const isHigh = inPool.bpm >= HIGH_BPM_CUTOFF;
+          if (isHigh !== wantHigh) {
+            console.log(`[BPM check] "${inPool.name}" is ${isHigh ? "HIGH" : "LOW"} (${inPool.bpm} BPM) but state=${ws} — correcting`);
+            await precomputeSkipCountsRef.current();
+            const correctionSkips = wantHigh ? precomputedHighSkipsRef.current : precomputedLowSkipsRef.current;
+            if (correctionSkips && correctionSkips > 0) {
+              lastSkipCountRef.current += correctionSkips;
+              for (let i = 0; i < correctionSkips; i++) {
+                await spotifyFetch("https://api.spotify.com/v1/me/player/next", {
+                  method: "POST",
+                  headers: { Authorization: `Bearer ${session.accessToken}` },
+                });
+                if (i < correctionSkips - 1) await new Promise(r => setTimeout(r, 200));
+              }
+              await new Promise(r => setTimeout(r, 500));
+            }
+          }
         }
-        pendingBpmStateRef.current = null;
       }
 
-      const corrected = await verifyAndCorrectBpm(vol);
-      if (!corrected) await fadeUp(vol);
+      // Single fade-up only after correct song is confirmed
+      await fadeUp(vol);
       volumeRestored = true;
     } finally {
       if (!volumeRestored) {
@@ -955,13 +967,15 @@ function WorkoutInner() {
 
       await new Promise(r => setTimeout(r, 500));
 
-      // Quick poll to display new track info while fade-up is still in progress
+      // Quick poll to display new track info while fade-up is in progress
+      let prevLandedId: string | null = null;
       const quickRes = await spotifyFetch("https://api.spotify.com/v1/me/player/currently-playing", {
         headers: { Authorization: `Bearer ${session.accessToken}` },
       });
       if (quickRes.ok && quickRes.status !== 204) {
         const quickData = await quickRes.json();
         if (quickData?.item) {
+          prevLandedId = quickData.item.id ?? null;
           currentTrackRef.current = quickData.item;
           setCurrentTrack(quickData.item);
           setIsPlaying(quickData.is_playing ?? false);
@@ -971,8 +985,33 @@ function WorkoutInner() {
         }
       }
 
-      const corrected = await verifyAndCorrectBpm(vol);
-      if (!corrected) await fadeUp(vol);
+      // BPM correction — still muted, correction skips are silent
+      const ws = workoutStateRef.current;
+      if (ws !== "idle" && ws !== "done" && prevLandedId) {
+        const wantHigh = ws === "warmup" || ws === "exercising";
+        const inPool = trackPoolRef.current.find(p => p.id === prevLandedId);
+        if (inPool?.bpm != null) {
+          const isHigh = inPool.bpm >= HIGH_BPM_CUTOFF;
+          if (isHigh !== wantHigh) {
+            console.log(`[BPM check/prev] "${inPool.name}" is ${isHigh ? "HIGH" : "LOW"} (${inPool.bpm} BPM) but state=${ws} — correcting`);
+            await precomputeSkipCountsRef.current();
+            const correctionSkips = wantHigh ? precomputedHighSkipsRef.current : precomputedLowSkipsRef.current;
+            if (correctionSkips && correctionSkips > 0) {
+              for (let i = 0; i < correctionSkips; i++) {
+                await spotifyFetch("https://api.spotify.com/v1/me/player/next", {
+                  method: "POST",
+                  headers: { Authorization: `Bearer ${session.accessToken}` },
+                });
+                if (i < correctionSkips - 1) await new Promise(r => setTimeout(r, 200));
+              }
+              await new Promise(r => setTimeout(r, 500));
+            }
+          }
+        }
+      }
+
+      // Single fade-up after correct song confirmed
+      await fadeUp(vol);
       volumeRestored = true;
     } finally {
       if (!volumeRestored) {
