@@ -1255,13 +1255,23 @@ function WorkoutInner() {
       )}
 
       {showQueuePanel && (
-        <div
-          className="fixed inset-0 z-[60] flex items-end"
-          style={{ backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', background: 'rgba(0,0,0,0.65)' }}
-          onClick={() => dismissQueuePanel()}
-        >
+        <div className="fixed inset-0 z-[60] flex items-end">
+          {/* Backdrop — opacity tracks panel position so it fades with the drag */}
           <div
-            className="w-full bg-[#0f1117] border-t border-white/10 rounded-t-3xl max-h-[80vh] flex flex-col"
+            className="absolute inset-0"
+            style={{
+              backdropFilter: 'blur(12px)',
+              WebkitBackdropFilter: 'blur(12px)',
+              background: 'rgba(0,0,0,0.65)',
+              opacity: isPanelAnimationDone
+                ? Math.max(0, 1 - panelDragY / window.innerHeight)
+                : 1,
+              transition: isDraggingPanel ? 'none' : 'opacity 300ms cubic-bezier(0.32, 0.72, 0, 1)',
+            }}
+            onClick={() => dismissQueuePanel()}
+          />
+          <div
+            className="relative w-full bg-[#0f1117] border-t border-white/10 rounded-t-3xl max-h-[80vh] flex flex-col"
             style={isPanelAnimationDone ? {
               transform: `translateY(${panelDragY}px)`,
               transition: isDraggingPanel ? 'none' : 'transform 300ms cubic-bezier(0.32, 0.72, 0, 1)',
