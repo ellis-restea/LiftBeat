@@ -478,3 +478,58 @@ Snapshot approach (commit 35cb995 — final state):
   - The urisToPlay filter: snapshot.filter(t => t.id !== currentId && `spotify:track:${t.id}` !== prevUri)
     — currentId is prevTrackIdRef.current (the track playing when the button was pressed), not the
     snapshot's currentlyPlayingId — these may differ if the snapshot is stale
+
+Session Summary — June 12 2026:
+
+Queue panel UI fixes (workout/page.tsx):
+
+Song text ghosting: added key={currentTrack?.id ?? "no-track"} to the track info div so React
+  unmounts/remounts it on track change. Also added liftfade 250ms animation on remount.
+
+Scrub bar snap to beginning: quick polls in skipTrack and prevTrack were updating currentTrack
+  but not setSongPosition/setSongDuration/setSongProgress — so the local 1s timer kept advancing
+  the old position until the next 5s fetchCurrentTrack poll snapped to 0. Fixed by adding all
+  three setters to both quick polls.
+
+Scrub bar diagonal drag: onPointerCancel was aliased to handleProgressPointerUp which calls seekTo.
+  Browser fires cancel when reclaiming touch for vertical scroll, causing a spurious seek. Fixed
+  with a separate handleProgressPointerCancel (resets state only, no seek) + touch-action: none.
+
+Queue panel drag-to-dismiss: removed X button, replaced with pill handle bar. Drag zone expanded
+  to the entire top section (handle bar + "Up Next" header), matching Spotify's behavior.
+
+Queue panel dismiss animation root cause: CSS animation with forwards fill-mode has higher cascade
+  priority than inline style transforms — the slideUpPanel animation was overriding every
+  setPanelDragY() call, making drag and dismiss appear broken/instant.
+  Fix: isPanelAnimationDone state — set to true via setTimeout at 290ms after panel opens.
+  While false: animation: slideUpPanel controls position (no inline transform).
+  While true: animation: none, inline transform + transition take over.
+  Dismiss and snap-back both use double-rAF: render 1 enables transition, render 2 changes value.
+
+Queue panel backdrop opacity: split backdrop and panel into separate sibling divs. Backdrop opacity
+  = 1 - panelDragY / window.innerHeight, so blur + darkening fade proportionally as panel is dragged.
+  Transition: none during drag, 300ms cubic-bezier on release (matches panel).
+
+Sound fx volume doubled (lib/feedback.ts):
+  light: 0.08 → 0.16, medium: 0.10 → 0.20, heavy: 0.12 → 0.24, error: 0.10 → 0.20.
+
+Mute-during-skip work — UNRESOLVED, needs continued investigation:
+
+What was tried:
+  1. Race condition fix: skipTrack was firing mute + skip via Promise.all (simultaneously).
+     Changed to sequential: await mute, then await skip.
+  2. Emergency volume restore added to skipTrack and prevTrack finally blocks (matching
+     withMuteTransition's pattern) so exceptions can't leave volume stuck at 0.
+  3. Flat mute flow: removed verifyAndCorrectBpm → skipToTargetBpm → withMuteTransition chain
+     (nested mute cycles re-captured volume while already at 0). Replaced with:
+     - Single mute at top of skipTrack/prevTrack
+     - Inline BPM check using landedTrackId from quick poll
+     - If wrong BPM: fire correction skips directly (still muted, no re-mute)
+     - Single fadeUp() at the end, only after correct song confirmed
+
+Current state: muting still not working reliably on manual skips. Root cause unclear.
+  Automatic state-transition skips (skipToTargetBpm → withMuteTransition) appear unaffected.
+  The flat flow is logically correct — further debugging needed (console logs, device testing).
+  Possible remaining causes: Spotify volume API silently returning non-200 on some devices,
+  rate limiting on the volume endpoint, or Spotify processing the skip before the mute lands
+  despite the sequential await.
