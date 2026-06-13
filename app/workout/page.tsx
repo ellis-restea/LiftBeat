@@ -838,13 +838,17 @@ function WorkoutInner() {
   }, [session, spotifyFetch]);
 
   const fadeUp = useCallback(async (vol: number) => {
+    console.log(`[fadeUp] 🔊 starting fade to vol=${vol}`);
     for (let i = 1; i <= 5; i++) {
-      await spotifyFetch(
-        `https://api.spotify.com/v1/me/player/volume?volume_percent=${Math.round((vol * i) / 5)}`,
+      const stepVol = Math.round((vol * i) / 5);
+      const fRes = await spotifyFetch(
+        `https://api.spotify.com/v1/me/player/volume?volume_percent=${stepVol}`,
         { method: "PUT", headers: { Authorization: `Bearer ${session?.accessToken ?? ""}` } },
       );
+      console.log(`[fadeUp] step ${i}/5 → vol=${stepVol} status=${fRes.status}`);
       if (i < 5) await new Promise(r => setTimeout(r, 80));
     }
+    console.log(`[fadeUp] ✅ done`);
   }, [session, spotifyFetch]);
   useEffect(() => { fadeUpRef.current = fadeUp; }, [fadeUp]);
 
@@ -852,6 +856,7 @@ function WorkoutInner() {
     if (!session?.accessToken) return;
     lastSkipCountRef.current = 1;
     const vol = await captureVolumeRef.current();
+    console.log(`[skipTrack] ▶ pressed — captured vol=${vol}`);
     setIsTransitioning(true);
     isTransitioningRef.current = true;
     lastCommandRef.current = Date.now() - 1200;
@@ -859,14 +864,17 @@ function WorkoutInner() {
     let volumeRestored = false;
     try {
       // Mute FIRST (awaited), then skip — prevents brief full-volume blip on the incoming track
-      await spotifyFetch(`https://api.spotify.com/v1/me/player/volume?volume_percent=0`, {
+      const muteRes = await spotifyFetch(`https://api.spotify.com/v1/me/player/volume?volume_percent=0`, {
         method: "PUT",
         headers: { Authorization: `Bearer ${session.accessToken}` },
       });
-      await spotifyFetch("https://api.spotify.com/v1/me/player/next", {
+      console.log(`[skipTrack] 🔇 mute PUT → status=${muteRes.status}`);
+
+      const nextRes = await spotifyFetch("https://api.spotify.com/v1/me/player/next", {
         method: "POST",
         headers: { Authorization: `Bearer ${session.accessToken}` },
       });
+      console.log(`[skipTrack] ⏭ /next POST → status=${nextRes.status}`);
 
       await new Promise(r => setTimeout(r, 500));
 
@@ -885,7 +893,11 @@ function WorkoutInner() {
           setSongPosition(quickData.progress_ms || 0);
           setSongDuration(quickData.item.duration_ms || 0);
           setSongProgress(quickData.item.duration_ms ? Math.round((quickData.progress_ms / quickData.item.duration_ms) * 100) : 0);
+          const landedBpm = trackPoolRef.current.find(p => p.id === landedTrackId)?.bpm;
+          console.log(`[skipTrack] 🎵 landed: "${quickData.item.name}" id=${landedTrackId} bpm=${landedBpm ?? "unknown"}`);
         }
+      } else {
+        console.log(`[skipTrack] ⚠ quick poll returned status=${quickRes.status} — no landed track`);
       }
 
       // Chill mode: manual skip is the trigger — clear deferred state
@@ -896,32 +908,43 @@ function WorkoutInner() {
       if (ws !== "idle" && ws !== "done" && landedTrackId) {
         const wantHigh = ws === "warmup" || ws === "exercising";
         const inPool = trackPoolRef.current.find(p => p.id === landedTrackId);
+        console.log(`[skipTrack] BPM check: state=${ws} wantHigh=${wantHigh} inPool.bpm=${inPool?.bpm ?? "not in pool"}`);
         if (inPool?.bpm != null) {
           const isHigh = inPool.bpm >= HIGH_BPM_CUTOFF;
           if (isHigh !== wantHigh) {
-            console.log(`[BPM check] "${inPool.name}" is ${isHigh ? "HIGH" : "LOW"} (${inPool.bpm} BPM) but state=${ws} — correcting`);
+            console.log(`[skipTrack] ❌ wrong bucket — "${inPool.name}" is ${isHigh ? "HIGH" : "LOW"} (${inPool.bpm} BPM) but state=${ws} — correcting`);
             await precomputeSkipCountsRef.current();
             const correctionSkips = wantHigh ? precomputedHighSkipsRef.current : precomputedLowSkipsRef.current;
+            console.log(`[skipTrack] correction skips needed: ${correctionSkips ?? "none"}`);
             if (correctionSkips && correctionSkips > 0) {
               lastSkipCountRef.current += correctionSkips;
               for (let i = 0; i < correctionSkips; i++) {
-                await spotifyFetch("https://api.spotify.com/v1/me/player/next", {
+                const cRes = await spotifyFetch("https://api.spotify.com/v1/me/player/next", {
                   method: "POST",
                   headers: { Authorization: `Bearer ${session.accessToken}` },
                 });
+                console.log(`[skipTrack] correction skip ${i + 1}/${correctionSkips} → status=${cRes.status}`);
                 if (i < correctionSkips - 1) await new Promise(r => setTimeout(r, 200));
               }
               await new Promise(r => setTimeout(r, 500));
             }
+          } else {
+            console.log(`[skipTrack] ✅ correct BPM bucket — no correction needed`);
           }
+        } else {
+          console.log(`[skipTrack] ⚠ track not in pool — skipping BPM check, fading up anyway`);
         }
+      } else if (ws === "idle" || ws === "done") {
+        console.log(`[skipTrack] state=${ws} — skipping BPM check`);
       }
 
       // Single fade-up only after correct song is confirmed
+      console.log(`[skipTrack] calling fadeUp(${vol})`);
       await fadeUp(vol);
       volumeRestored = true;
     } finally {
       if (!volumeRestored) {
+        console.log(`[skipTrack] ⚠ volumeRestored=false — emergency restore to vol=${vol}`);
         fetch(`https://api.spotify.com/v1/me/player/volume?volume_percent=${vol}`, {
           method: "PUT",
           headers: { Authorization: `Bearer ${session!.accessToken!}` },
@@ -951,18 +974,21 @@ function WorkoutInner() {
     isTransitioningRef.current = true;
     lastCommandRef.current = Date.now() - 1200;
 
+    console.log(`[prevTrack] ◀ pressed — captured vol=${vol}, skipCount=${skipCount}`);
     let volumeRestored = false;
     try {
-      await spotifyFetch(`https://api.spotify.com/v1/me/player/volume?volume_percent=0`, {
+      const muteRes = await spotifyFetch(`https://api.spotify.com/v1/me/player/volume?volume_percent=0`, {
         method: "PUT",
         headers: { Authorization: `Bearer ${session.accessToken}` },
       });
+      console.log(`[prevTrack] 🔇 mute PUT → status=${muteRes.status}`);
       console.log(`[prevTrack] firing ${skipCount} /previous call(s)`);
       for (let i = 0; i < skipCount; i++) {
-        await spotifyFetch("https://api.spotify.com/v1/me/player/previous", {
+        const prevRes = await spotifyFetch("https://api.spotify.com/v1/me/player/previous", {
           method: "POST",
           headers: { Authorization: `Bearer ${session.accessToken}` },
         });
+        console.log(`[prevTrack] ⏮ /previous ${i + 1}/${skipCount} → status=${prevRes.status}`);
       }
 
       await new Promise(r => setTimeout(r, 500));
@@ -982,7 +1008,11 @@ function WorkoutInner() {
           setSongPosition(quickData.progress_ms || 0);
           setSongDuration(quickData.item.duration_ms || 0);
           setSongProgress(quickData.item.duration_ms ? Math.round((quickData.progress_ms / quickData.item.duration_ms) * 100) : 0);
+          const prevBpm = trackPoolRef.current.find(p => p.id === prevLandedId)?.bpm;
+          console.log(`[prevTrack] 🎵 landed: "${quickData.item.name}" id=${prevLandedId} bpm=${prevBpm ?? "unknown"}`);
         }
+      } else {
+        console.log(`[prevTrack] ⚠ quick poll returned status=${quickRes.status} — no landed track`);
       }
 
       // BPM correction — still muted, correction skips are silent
@@ -990,31 +1020,40 @@ function WorkoutInner() {
       if (ws !== "idle" && ws !== "done" && prevLandedId) {
         const wantHigh = ws === "warmup" || ws === "exercising";
         const inPool = trackPoolRef.current.find(p => p.id === prevLandedId);
+        console.log(`[prevTrack] BPM check: state=${ws} wantHigh=${wantHigh} inPool.bpm=${inPool?.bpm ?? "not in pool"}`);
         if (inPool?.bpm != null) {
           const isHigh = inPool.bpm >= HIGH_BPM_CUTOFF;
           if (isHigh !== wantHigh) {
-            console.log(`[BPM check/prev] "${inPool.name}" is ${isHigh ? "HIGH" : "LOW"} (${inPool.bpm} BPM) but state=${ws} — correcting`);
+            console.log(`[prevTrack] ❌ wrong bucket — "${inPool.name}" is ${isHigh ? "HIGH" : "LOW"} (${inPool.bpm} BPM) but state=${ws} — correcting`);
             await precomputeSkipCountsRef.current();
             const correctionSkips = wantHigh ? precomputedHighSkipsRef.current : precomputedLowSkipsRef.current;
+            console.log(`[prevTrack] correction skips needed: ${correctionSkips ?? "none"}`);
             if (correctionSkips && correctionSkips > 0) {
               for (let i = 0; i < correctionSkips; i++) {
-                await spotifyFetch("https://api.spotify.com/v1/me/player/next", {
+                const cRes = await spotifyFetch("https://api.spotify.com/v1/me/player/next", {
                   method: "POST",
                   headers: { Authorization: `Bearer ${session.accessToken}` },
                 });
+                console.log(`[prevTrack] correction skip ${i + 1}/${correctionSkips} → status=${cRes.status}`);
                 if (i < correctionSkips - 1) await new Promise(r => setTimeout(r, 200));
               }
               await new Promise(r => setTimeout(r, 500));
             }
+          } else {
+            console.log(`[prevTrack] ✅ correct BPM bucket — no correction needed`);
           }
+        } else {
+          console.log(`[prevTrack] ⚠ track not in pool — skipping BPM check, fading up anyway`);
         }
       }
 
       // Single fade-up after correct song confirmed
+      console.log(`[prevTrack] calling fadeUp(${vol})`);
       await fadeUp(vol);
       volumeRestored = true;
     } finally {
       if (!volumeRestored) {
+        console.log(`[prevTrack] ⚠ volumeRestored=false — emergency restore to vol=${vol}`);
         fetch(`https://api.spotify.com/v1/me/player/volume?volume_percent=${vol}`, {
           method: "PUT",
           headers: { Authorization: `Bearer ${session!.accessToken!}` },
