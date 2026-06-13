@@ -856,17 +856,17 @@ function WorkoutInner() {
     isTransitioningRef.current = true;
     lastCommandRef.current = Date.now() - 1200;
 
+    let volumeRestored = false;
     try {
-      await Promise.all([
-        spotifyFetch(`https://api.spotify.com/v1/me/player/volume?volume_percent=0`, {
-          method: "PUT",
-          headers: { Authorization: `Bearer ${session.accessToken}` },
-        }),
-        spotifyFetch("https://api.spotify.com/v1/me/player/next", {
-          method: "POST",
-          headers: { Authorization: `Bearer ${session.accessToken}` },
-        }),
-      ]);
+      // Mute FIRST (awaited), then skip — prevents brief full-volume blip on the incoming track
+      await spotifyFetch(`https://api.spotify.com/v1/me/player/volume?volume_percent=0`, {
+        method: "PUT",
+        headers: { Authorization: `Bearer ${session.accessToken}` },
+      });
+      await spotifyFetch("https://api.spotify.com/v1/me/player/next", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${session.accessToken}` },
+      });
 
       await new Promise(r => setTimeout(r, 500));
 
@@ -907,7 +907,14 @@ function WorkoutInner() {
 
       const corrected = await verifyAndCorrectBpm(vol);
       if (!corrected) await fadeUp(vol);
+      volumeRestored = true;
     } finally {
+      if (!volumeRestored) {
+        fetch(`https://api.spotify.com/v1/me/player/volume?volume_percent=${vol}`, {
+          method: "PUT",
+          headers: { Authorization: `Bearer ${session!.accessToken!}` },
+        }).catch(() => {});
+      }
       lastCommandRef.current = 0;
       setIsTransitioning(false);
       isTransitioningRef.current = false;
@@ -932,6 +939,7 @@ function WorkoutInner() {
     isTransitioningRef.current = true;
     lastCommandRef.current = Date.now() - 1200;
 
+    let volumeRestored = false;
     try {
       await spotifyFetch(`https://api.spotify.com/v1/me/player/volume?volume_percent=0`, {
         method: "PUT",
@@ -965,7 +973,14 @@ function WorkoutInner() {
 
       const corrected = await verifyAndCorrectBpm(vol);
       if (!corrected) await fadeUp(vol);
+      volumeRestored = true;
     } finally {
+      if (!volumeRestored) {
+        fetch(`https://api.spotify.com/v1/me/player/volume?volume_percent=${vol}`, {
+          method: "PUT",
+          headers: { Authorization: `Bearer ${session!.accessToken!}` },
+        }).catch(() => {});
+      }
       lastCommandRef.current = 0;
       setIsTransitioning(false);
       isTransitioningRef.current = false;
