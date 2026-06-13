@@ -78,12 +78,12 @@ function isInputFocused(): boolean {
 }
 
 const SOUNDS: Record<FeedbackType, (ctx: AudioContext) => void> = {
-  light:  (ctx) => scheduleTone(ctx, 800, 12, 0.08),
-  medium: (ctx) => scheduleTone(ctx, 600, 18, 0.10),
-  heavy:  (ctx) => scheduleTone(ctx, 400, 25, 0.12),
+  light:  (ctx) => scheduleTone(ctx, 800, 12, 0.16),
+  medium: (ctx) => scheduleTone(ctx, 600, 18, 0.20),
+  heavy:  (ctx) => scheduleTone(ctx, 400, 25, 0.24),
   error:  (ctx) => {
-    scheduleTone(ctx, 300, 25, 0.10, 0);
-    scheduleTone(ctx, 300, 25, 0.10, 80);
+    scheduleTone(ctx, 300, 25, 0.20, 0);
+    scheduleTone(ctx, 300, 25, 0.20, 80);
   },
 };
 
