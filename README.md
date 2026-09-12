@@ -1,36 +1,36 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+LiftBeat
 
-## Getting Started
+LiftBeat is a workout app that automatically controls your Spotify music based on what you're doing in the gym.
 
-First, run the development server:
+When you're in a set — high energy music plays. When you're resting — it switches to something calmer. When your rest timer ends — the hype comes back automatically. No more fumbling with your phone between sets.
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+Live at: lift-sync-ashen.vercel.app
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+How it works
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+You log in with Spotify and select your workout playlist
+You build your workout — exercises, sets, reps, rest time, supersets
+LiftBeat analyzes the BPM of songs currently in your Spotify queue using the Songstats API
+Songs above the BPM threshold are classified as high energy, below as low energy
+When you press Start Workout, the app enters warmup mode and plays high energy music
+You press Done with Set → app switches to low energy music and starts your rest countdown
+Rest timer hits zero → high energy music kicks back in automatically
+Repeat until workout complete
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+For supersets, the app skips the rest period between paired exercises and only rests after both are done.
 
-## Learn More
+Architecture
 
-To learn more about Next.js, take a look at the following resources:
+Frontend: Next.js 16 (App Router), React, TypeScript, Tailwind v4
+Backend/Database: Supabase (PostgreSQL) — stores workouts, exercises, user playlists, and a BPM cache so the same song is never looked up twice
+Auth: NextAuth v4 with Spotify OAuth and automatic token refresh
+BPM Detection: Songstats API — looks up tempo by Spotify track ID, results cached in Supabase
+Music Control: Spotify Web API — reads the current queue, checks BPM of upcoming tracks, skips songs that don't match the current workout state
+Deployment: Vercel with automatic deploys from GitHub
+Mobile: Progressive Web App (PWA) — installable on iPhone via Safari, runs fullscreen, Wake Lock keeps screen on during workouts
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Workout States
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+idle → warmup → exercising → resting → done
 
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Each state transition triggers a BPM check on the current track and skips forward until a matching energy song is found.
